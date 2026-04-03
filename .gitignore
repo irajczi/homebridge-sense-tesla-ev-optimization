@@ -1,0 +1,30 @@
+# Compiled output
+dist/
+
+# Node modules
+node_modules/
+
+# Homebridge test config (may contain secrets)
+test/hbConfig/persist/
+test/hbConfig/accessories/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files (may contain secrets)
+.env
+.env.local

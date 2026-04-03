@@ -1,0 +1,27 @@
+{
+  "name": "homebridge-ev-solar-charger-workspace",
+  "version": "1.0.0",
+  "description": "Monorepo workspace for homebridge-ev-solar-charger",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:core": "npm run build -w @homebridge-ev-solar-charger/core",
+    "build:cli": "npm run build -w @homebridge-ev-solar-charger/cli",
+    "lint": "eslint 'packages/*/src/**/*.ts'"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "homebridge": "^1.8.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

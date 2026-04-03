@@ -1,0 +1,22 @@
+{
+  "bridge": {
+    "name": "Homebridge EV Solar Dev",
+    "username": "0E:D1:B9:49:4A:21",
+    "port": 51826,
+    "pin": "031-45-154"
+  },
+  "platforms": [
+    {
+      "platform": "EvSolarCharger",
+      "name": "EV Solar Charger",
+      "senseEmail": "your-sense-email@example.com",
+      "sensePassword": "your-sense-password",
+      "teslaEmail": "your-tesla-email@example.com",
+      "teslaRefreshToken": "your-tesla-refresh-token",
+      "minimumChargeAmps": 5,
+      "maximumChargeAmps": 32,
+      "targetSoC": 80,
+      "pollingIntervalSeconds": 60
+    }
+  ]
+}

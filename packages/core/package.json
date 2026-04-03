@@ -1,0 +1,17 @@
+{
+  "name": "@homebridge-ev-solar-charger/core",
+  "version": "1.0.0",
+  "description": "Shared core logic — no Homebridge dependency",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "rimraf ./dist && tsc"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0"
+  }
+}
