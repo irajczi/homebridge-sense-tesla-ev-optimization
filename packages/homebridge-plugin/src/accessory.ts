@@ -1,3 +1,35 @@
+/**
+ * accessory.ts — HomeKit Switch accessory wrapping the SolarChargeController.
+ *
+ * This class ties the Homebridge accessory lifecycle to the core controller:
+ *   Switch ON  → controller.start()  — begins polling Sense + adjusting Tesla amps
+ *   Switch OFF → controller.stop()   — halts polling; Sense WebSocket stays alive
+ *
+ * State persistence:
+ *   `accessory.context.isActive` is written on every toggle and survives
+ *   Homebridge restarts. On construction, if `isActive` is true, the controller
+ *   is restarted automatically so charging optimisation resumes without user action.
+ *
+ * Auto-off feature (optional):
+ *   When `homebridge.auto_off_after_no_solar_minutes` is configured, a separate
+ *   `setInterval` monitor runs alongside the controller. Every polling interval it
+ *   reads the latest Sense solar watts. If solar stays at zero longer than the
+ *   configured threshold, the switch is flipped OFF programmatically and the
+ *   change is pushed to HomeKit (so the UI updates without user interaction).
+ *   The timer resets whenever solar production resumes.
+ *
+ * Error paths:
+ *   - Controller errors (Tesla API failures, Sense stale data, wake timeout)
+ *     → handled inside the controller; emitted as 'log' events which are routed
+ *       to the Homebridge logger here. The switch stays ON — the controller keeps
+ *       retrying each poll cycle.
+ *   - Auto-off monitor timer fires but controller is already stopped
+ *     → `stopController()` is idempotent; double-stop is safe.
+ *   - Homebridge restarts with switch ON and Sense connection failing
+ *     → controller is started (switch restored to ON), but poll ticks will log
+ *       "Poll tick failed" until Sense reconnects. No crash.
+ */
+
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
 import { SolarChargeController } from '@homebridge-ev-solar-charger/core';

@@ -1,3 +1,45 @@
+/**
+ * tesla.ts — Tesla vehicle API client (Owner's API + Fleet API).
+ *
+ * Implements the commands the controller needs: authenticate, get vehicle,
+ * wake vehicle, set charging amps, start charging, stop charging.
+ *
+ * Two authentication strategies share the same public interface:
+ *   owners_api  — OAuth2 refresh_token grant against auth.tesla.com.
+ *                 The refresh token may rotate; the client stores the latest
+ *                 copy in memory so subsequent refreshes use the current token.
+ *   fleet_api   — OAuth2 client_credentials grant. No refresh token is issued;
+ *                 the client re-runs the grant when the access token expires.
+ *
+ * Token lifecycle:
+ *   - `ensureToken()` is called before every API request.
+ *   - Access tokens are considered expired 60 s before their actual expiry to
+ *     avoid edge-case failures caused by clock skew or slow requests.
+ *   - Tokens are stored in memory only; there is no disk cache. A Homebridge
+ *     restart or process crash will trigger a fresh authentication on the next
+ *     request, which is acceptable given the token TTL (typically 8 hours).
+ *
+ * Wake-up handling:
+ *   - Vehicles go to sleep when idle. Before any command, `wakeVehicle()` must
+ *     be called. It polls the vehicle state every 2 s for up to 30 s.
+ *   - If the vehicle does not come online within 30 s, the method throws. The
+ *     controller catches this in `tick()`, logs a warning, and tries again on
+ *     the next poll cycle.
+ *
+ * Error paths:
+ *   - Auth failure (bad token/credentials, network down)
+ *     → throws "Tesla Owner's/Fleet API auth failed: <status>"
+ *     → propagates to controller `tick()` which logs it and retries next cycle.
+ *   - Vehicle not found on account
+ *     → throws "Vehicle with VIN X not found" or "No vehicles on account"
+ *   - Wake timeout (vehicle unresponsive for 30 s)
+ *     → throws "Vehicle <id> did not come online within 30s"
+ *   - Command rejected by vehicle (e.g. already charging, charge limit reached)
+ *     → `assertResult()` throws "Tesla command <cmd> rejected: <reason>"
+ *   - Any HTTP error from the API
+ *     → throws "Tesla GET/POST <path> failed: <status>"
+ */
+
 import { type AppConfig } from './config.js';
 
 // ---- Endpoints & constants --------------------------------------------------

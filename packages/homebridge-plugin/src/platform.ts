@@ -1,3 +1,30 @@
+/**
+ * platform.ts — Homebridge DynamicPlatformPlugin implementation.
+ *
+ * Responsible for:
+ *   1. Translating the flat Homebridge PlatformConfig into the nested AppConfig
+ *      expected by the core package (`buildAppConfig()`).
+ *   2. Constructing the shared SenseClient and TeslaClient instances (one set
+ *      per Homebridge instance, shared with all accessories).
+ *   3. Connecting to Sense on `didFinishLaunching`. If the connection fails, the
+ *      plugin continues and registers accessories anyway so the switch is visible
+ *      in HomeKit — it just won't be able to adjust charge amps until Sense reconnects.
+ *   4. Registering (or restoring from cache) the single virtual switch accessory.
+ *
+ * Config field mapping (Homebridge → AppConfig):
+ *   See `buildAppConfig()` at the bottom of this file for the authoritative map.
+ *   The Homebridge schema (config.schema.json) uses camelCase field names;
+ *   AppConfig uses snake_case nested fields — buildAppConfig bridges the two.
+ *
+ * Error paths:
+ *   - Sense connection failure on launch
+ *     → logged as error; `discoverDevices()` still runs so the switch appears.
+ *   - Invalid config values (missing email, etc.)
+ *     → `validateConfig()` is NOT called here; Homebridge Config UI X enforces
+ *       the schema. Raw missing values become undefined/null in AppConfig and
+ *       will cause descriptive errors on first Tesla or Sense API call.
+ */
+
 import {
   API,
   DynamicPlatformPlugin,

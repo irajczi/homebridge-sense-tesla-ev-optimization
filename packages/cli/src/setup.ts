@@ -54,7 +54,7 @@ export async function runSetup(): Promise<void> {
   writeConfig(config, configPath);
 
   console.log(`\nConfig written to: ${configPath}`);
-  console.log('Run `ev-solar-charger start` to begin.\n');
+  console.log('Run `ev-solar-charger` to begin.\n');
 }
 
 // ---- Section prompts --------------------------------------------------------

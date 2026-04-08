@@ -1,6 +1,6 @@
 {
   "name": "homebridge-ev-solar-charger-workspace",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "Monorepo workspace for homebridge-ev-solar-charger",
   "private": true,
   "workspaces": [

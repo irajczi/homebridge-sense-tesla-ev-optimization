@@ -1,4 +1,30 @@
 #!/usr/bin/env node
+/**
+ * index.ts — Standalone CLI entry point for the EV Solar Charger.
+ *
+ * Execution flow:
+ *   1. If no config file is found, launches the interactive setup wizard
+ *      (packages/cli/src/setup.ts) which writes config.yaml and returns.
+ *   2. Loads and validates config.yaml (or the path in $EV_CONFIG_PATH).
+ *   3. Constructs SenseClient, TeslaClient, and SolarChargeController from core.
+ *   4. Connects to the Sense WebSocket — hard failure if this step errors
+ *      (wrong credentials, network unavailable).
+ *   5. Starts the controller polling loop.
+ *   6. Wires SIGINT / SIGTERM for graceful shutdown (stops controller + closes
+ *      the Sense WebSocket before exiting).
+ *
+ * Logging format: [YYYY-MM-DD HH:MM:SS.mmm] [LEVEL] message
+ *   Errors go to stderr; all other levels go to stdout.
+ *
+ * Environment:
+ *   EV_CONFIG_PATH  — override config file location (default: ./config.yaml)
+ *
+ * Error paths:
+ *   - config.yaml missing + setup wizard cancelled → exits 0
+ *   - config.yaml invalid                          → exits 1 (validateConfig throws)
+ *   - Sense connection failure                     → exits 1 with error message
+ *   - Any unhandled top-level rejection            → exits 1 via main().catch()
+ */
 
 import { existsSync } from 'fs';
 import { resolve } from 'path';

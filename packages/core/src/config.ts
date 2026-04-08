@@ -1,3 +1,18 @@
+/**
+ * config.ts — Application configuration types, loader, and validator.
+ *
+ * Defines the `AppConfig` interface that every package (CLI, Homebridge plugin) relies on.
+ * `loadConfig()` reads a YAML file and returns a validated `AppConfig`.
+ * `validateConfig()` collects ALL errors before throwing so users can fix every
+ * problem in a single pass rather than discovering issues one at a time.
+ *
+ * Error paths:
+ *   - File unreadable / not found → throws "Cannot read config file …"
+ *   - YAML parse failure          → thrown by js-yaml, wrapped in the same message
+ *   - Missing or invalid fields   → throws "Invalid configuration:\n  • field …"
+ *     (all errors listed together)
+ */
+
 import { readFileSync } from 'fs';
 import { load as parseYaml } from 'js-yaml';
 

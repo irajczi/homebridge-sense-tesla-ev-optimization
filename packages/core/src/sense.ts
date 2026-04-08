@@ -1,3 +1,36 @@
+/**
+ * sense.ts — Sense Home Energy Monitor WebSocket client.
+ *
+ * Authenticates with the Sense HTTP API, then opens a persistent WebSocket to
+ * the real-time data feed and caches the most recent `solar_w` and `w` (total
+ * home consumption) values so the controller can read them each poll cycle.
+ *
+ * Design notes:
+ *   - The Sense API is unofficial and undocumented; it may break without notice.
+ *     All interaction is confined here so the interface (`getSolarWatts()` /
+ *     `getHomeWatts()`) can be swapped for another source (Enphase, SolarEdge)
+ *     without touching controller logic.
+ *   - Re-authentication is rate-limited to once per 15 minutes. Transient
+ *     WebSocket drops reuse the existing token to avoid hammering the auth
+ *     endpoint. Only a gap longer than 15 minutes (or a 401 response) triggers
+ *     a fresh login.
+ *   - If the WebSocket drops, `scheduleReconnect()` retries every 5 seconds
+ *     indefinitely while `shouldReconnect` is true. The last good Sense values
+ *     are held in memory so the controller keeps running with stale-but-safe
+ *     data rather than crashing.
+ *
+ * Error paths:
+ *   - Auth HTTP failure (wrong credentials, network down)
+ *     → `connect()` rejects with "Sense auth failed: <status>"
+ *     → CLI exits; Homebridge plugin logs and continues with switch visible.
+ *   - WebSocket error after initial connect
+ *     → logged via the optional `SenseLogger` callback; reconnect is scheduled.
+ *   - Reconnect keeps failing (Sense service down)
+ *     → each attempt is logged; retries continue silently in the background.
+ *     The cached watts values remain at their last known reading (typically 0
+ *     after a restart before the first frame arrives).
+ */
+
 import WebSocket from 'ws';
 
 const AUTH_URL = 'https://api.sense.com/apiservice/api/v1/authenticate';

@@ -1,3 +1,45 @@
+/**
+ * controller.ts — Solar charge controller: the core decision-making loop.
+ *
+ * `SolarChargeController` polls the Sense client for current solar and home
+ * watts on a configurable interval and issues Tesla charging commands to keep
+ * the car consuming only surplus solar energy.
+ *
+ * Surplus calculation (per poll tick):
+ *   The PRD spec uses raw Sense home watts directly. This implementation takes
+ *   a more precise approach: it subtracts the car's own last-commanded draw
+ *   (currentAmps × 240 V) from the Sense home reading before computing
+ *   surplus. This matters because Sense usually includes the car's charger as
+ *   part of total home consumption — subtracting it lets us calculate the true
+ *   base house load and therefore the correct target amps for the car.
+ *
+ *   If Sense does NOT detect the car as a separate device, this subtraction
+ *   over-corrects by zero (currentAmps starts at 0 until charging begins), so
+ *   the result is still correct on the first start. After that, the in-memory
+ *   `currentAmps` accurately tracks what was last commanded.
+ *
+ * Scheduling:
+ *   Uses a chained `setTimeout` rather than `setInterval` so ticks never
+ *   overlap: the next poll is only scheduled after the current tick resolves
+ *   (or rejects). This prevents pile-up if a Tesla API call is slow.
+ *
+ * Event model:
+ *   The controller emits typed events (`log`, `charging:start`, `charging:stop`,
+ *   `amps:adjust`) rather than logging directly. Callers (CLI, Homebridge plugin)
+ *   wire these to their own loggers so the core has zero output-format coupling.
+ *
+ * Error paths:
+ *   - Any error inside `tick()` (Sense stale, Tesla API, wake timeout, etc.)
+ *     → caught, emitted as `log('error', 'Poll tick failed: …')`, and the
+ *       next poll is still scheduled. The process does NOT crash.
+ *   - Vehicle fetch failure (first tick only)
+ *     → same error path; `this.vehicle` stays null and is retried next tick.
+ *   - Stop/start command failure
+ *     → thrown from the Tesla client, caught by the tick catch block,
+ *       and `this.charging` / `this.currentAmps` are NOT updated (so the next
+ *       tick will try the same command again rather than assuming it succeeded).
+ */
+
 import { EventEmitter } from 'events';
 import { AppConfig } from './config.js';
 import { SenseClient } from './sense.js';
