@@ -1,0 +1,95 @@
+# EV Solar Charger — example configuration
+#
+# Copy this file to config.yaml, fill in your credentials, then run:
+#   ev-solar-charger start
+#
+# You can also run the interactive setup wizard instead:
+#   ev-solar-charger setup
+#
+# The config path can be overridden with the EV_CONFIG_PATH environment variable.
+
+# ── Sense Energy Monitor ──────────────────────────────────────────────────────
+sense:
+  # Email address registered to your Sense account.
+  email: "you@example.com"
+
+  # Sense account password.
+  # The controller uses this to authenticate with the Sense WebSocket API
+  # and will re-authenticate automatically if the connection drops.
+  password: "your-sense-password"
+
+# ── Tesla ─────────────────────────────────────────────────────────────────────
+tesla:
+  # Which Tesla API to use.
+  # Valid values:
+  #   owners_api  — unofficial Owner's API for personal use; requires a
+  #                 refresh token obtained via the Tesla PKCE OAuth flow.
+  #   fleet_api   — official Tesla Fleet API for third-party apps; requires
+  #                 a fleet API key issued by Tesla.
+  mode: "owners_api"
+
+  # ── Owner's API only ──────────────────────────────────────────────────────
+  # OAuth2 refresh token for your Tesla account.
+  # Obtain this via the Tesla PKCE flow (e.g. using tesla-auth or Auth app).
+  # Required when mode is owners_api; remove or comment out for fleet_api.
+  password: "your-tesla-oauth2-refresh-token"
+
+  # ── Fleet API only ────────────────────────────────────────────────────────
+  # Client ID of your registered Tesla Fleet API application.
+  # This is the UUID shown on developer.tesla.com after registering your app.
+  # Required when mode is fleet_api; remove or comment out for owners_api.
+  # fleet_client_id: "12345678-1234-1234-1234-123456789abc"
+
+  # Client secret of your registered Tesla Fleet API application.
+  # Generated alongside the client ID on developer.tesla.com.
+  # Required when mode is fleet_api; remove or comment out for owners_api.
+  # fleet_api_key: "your-fleet-api-client-secret"
+
+  # ── Optional fields (both modes) ─────────────────────────────────────────
+  # Tesla account email address.
+  # Optional — used for identification and future MFA flows.
+  # email: "you@tesla.com"
+
+  # Vehicle Identification Number.
+  # Optional — if omitted, the first vehicle on the account is used.
+  # Specify this if you have more than one Tesla on the account.
+  # vin: "5YJ3E1EA1JF000001"
+
+# ── Charging ──────────────────────────────────────────────────────────────────
+charging:
+  # Minimum charging rate in amps.
+  # The controller will not start charging unless solar surplus supports at
+  # least this many amps, and (if stop_when_insufficient is true) will stop
+  # charging when surplus drops below this threshold.
+  # Valid values: 1–48 (whole number)
+  # Typical minimum for a Tesla is 5A.
+  min_amps: 5
+
+  # Maximum charging rate in amps.
+  # The controller will never command more than this, even if surplus allows.
+  # Must be >= min_amps. Valid values: 1–48 (whole number)
+  # Match this to your EVSE's rated capacity (e.g. 32A for a 7.7 kW charger).
+  max_amps: 32
+
+  # How often to read Sense data and adjust the charge rate, in seconds.
+  # Lower values react faster to clouds or shifting loads but generate more
+  # Tesla API calls. Valid values: whole number >= 10.
+  # 60 s is a good default; 30 s is reasonable for volatile solar conditions.
+  poll_interval_seconds: 60
+
+  # Whether to stop charging when available solar surplus drops below min_amps.
+  # true  — stops the session; charging resumes automatically next poll when
+  #         surplus recovers. Best for strict solar-only charging.
+  # false — keeps charging at min_amps even if it means importing a little grid
+  #         power. Best when you want to prioritise keeping the session active.
+  stop_when_insufficient: true
+
+# ── Homebridge integration (optional) ─────────────────────────────────────────
+# Remove this entire section if you are running the CLI standalone without
+# the Homebridge plugin.
+# homebridge:
+#   # Automatically turn the virtual charger switch off in the Homebridge UI
+#   # after this many minutes with no solar production (e.g. after sunset).
+#   # Set to null to disable automatic shut-off.
+#   # Valid values: positive whole number, or null.
+#   auto_off_after_no_solar_minutes: 30

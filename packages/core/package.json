@@ -10,7 +10,13 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "dependencies": {
+    "js-yaml": "^4.0.0",
+    "ws": "^8.0.0"
+  },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.0",
+    "@types/ws": "^8.0.0",
     "rimraf": "^5.0.0",
     "typescript": "^5.0.0"
   }
