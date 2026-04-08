@@ -1,0 +1,188 @@
+{
+  "pluginAlias": "EvSolarCharger",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Optimises Tesla EV charging against live Sense Solar data. Turn the HomeKit switch ON to start — the plugin will set charging amps to match available solar surplus.",
+  "footerDisplay": "For help and documentation visit the [GitHub repository](https://github.com/irajczi/homebridge-sense-tesla-ev-optimization).",
+  "schema": {
+    "type": "object",
+    "required": ["name", "senseEmail", "sensePassword"],
+    "properties": {
+
+      "name": {
+        "title": "Plugin Name",
+        "type": "string",
+        "default": "EV Solar Charger"
+      },
+
+      "senseEmail": {
+        "title": "Sense Account Email",
+        "type": "string",
+        "format": "email",
+        "placeholder": "you@example.com"
+      },
+
+      "sensePassword": {
+        "title": "Sense Account Password",
+        "type": "string"
+      },
+
+      "teslaMode": {
+        "title": "Tesla Authentication Method",
+        "type": "string",
+        "default": "owners_api",
+        "enum": ["owners_api", "fleet_api"]
+      },
+
+      "teslaEmail": {
+        "title": "Tesla Account Email",
+        "type": "string",
+        "format": "email",
+        "placeholder": "you@example.com",
+        "description": "Optional — used for display purposes only."
+      },
+
+      "teslaRefreshToken": {
+        "title": "Refresh Token",
+        "type": "string",
+        "description": "Required for Owner's API. Obtain via the <a href='https://github.com/adriankumpf/tesla_auth' target='_blank'>tesla_auth</a> app or similar tool."
+      },
+
+      "fleetClientId": {
+        "title": "Fleet API Client ID",
+        "type": "string",
+        "placeholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "description": "Required for Fleet API. The UUID of your registered Tesla application."
+      },
+
+      "fleetApiKey": {
+        "title": "Fleet API Client Secret",
+        "type": "string",
+        "description": "Required for Fleet API. The client secret of your registered Tesla application."
+      },
+
+      "vehicleVIN": {
+        "title": "Vehicle VIN",
+        "type": "string",
+        "placeholder": "5YJ3E1EA0NF000001",
+        "description": "Optional — if omitted, the first vehicle on the account is used."
+      },
+
+      "minimumChargeAmps": {
+        "title": "Minimum Charge Amps",
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 48,
+        "description": "Charging will not start (or will stop) below this current."
+      },
+
+      "maximumChargeAmps": {
+        "title": "Maximum Charge Amps",
+        "type": "integer",
+        "default": 32,
+        "minimum": 1,
+        "maximum": 48,
+        "description": "Charging will never exceed this current, even with surplus solar."
+      },
+
+      "pollingIntervalSeconds": {
+        "title": "Polling Interval (seconds)",
+        "type": "integer",
+        "default": 60,
+        "minimum": 30,
+        "description": "How often to read Sense data and recalculate charging amps."
+      },
+
+      "stopWhenInsufficient": {
+        "title": "Stop Charging When Solar Is Insufficient",
+        "type": "boolean",
+        "default": true,
+        "description": "When enabled, charging stops if solar surplus drops below the minimum amps. When disabled, charging continues at the minimum."
+      },
+
+      "autoOffAfterNoSolarMinutes": {
+        "title": "Auto-off After No Solar (minutes)",
+        "type": "integer",
+        "minimum": 1,
+        "description": "Flip the HomeKit switch OFF automatically once solar production has been zero for this many minutes. Leave blank to disable."
+      }
+    }
+  },
+
+  "layout": [
+    {
+      "type": "section",
+      "title": "Plugin",
+      "items": [
+        "name"
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Sense Energy Monitor",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        "senseEmail",
+        { "key": "sensePassword", "type": "password" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Tesla Account",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        {
+          "key": "teslaMode",
+          "titleMap": {
+            "owners_api": "Owner's API (Refresh Token)",
+            "fleet_api":  "Fleet API (Client Credentials)"
+          }
+        },
+        "teslaEmail",
+        {
+          "key": "teslaRefreshToken",
+          "type": "password",
+          "condition": "model.teslaMode !== 'fleet_api'"
+        },
+        {
+          "key": "fleetClientId",
+          "condition": "model.teslaMode === 'fleet_api'"
+        },
+        {
+          "key": "fleetApiKey",
+          "type": "password",
+          "condition": "model.teslaMode === 'fleet_api'"
+        },
+        "vehicleVIN"
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Charging",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 200px", "key": "minimumChargeAmps" },
+            { "flex": "1 1 200px", "key": "maximumChargeAmps" }
+          ]
+        },
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 200px", "key": "pollingIntervalSeconds" },
+            { "flex": "1 1 200px", "key": "autoOffAfterNoSolarMinutes" }
+          ]
+        },
+        "stopWhenInsufficient"
+      ]
+    }
+  ]
+}

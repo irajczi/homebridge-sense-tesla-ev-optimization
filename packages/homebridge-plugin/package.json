@@ -1,0 +1,36 @@
+{
+  "name": "homebridge-ev-solar-charger",
+  "version": "1.0.0",
+  "description": "Homebridge plugin that uses Sense Solar monitoring to optimize Tesla EV charging based on solar production",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "rimraf ./dist && tsc",
+    "watch": "tsc --watch"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.6.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "tesla",
+    "sense",
+    "solar",
+    "ev",
+    "charging",
+    "homebridge"
+  ],
+  "peerDependencies": {
+    "homebridge": ">=1.6.0"
+  },
+  "dependencies": {
+    "@homebridge-ev-solar-charger/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "homebridge": "^1.8.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0"
+  }
+}

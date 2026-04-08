@@ -10,6 +10,7 @@
     "build": "npm run build --workspaces --if-present",
     "build:core": "npm run build -w @homebridge-ev-solar-charger/core",
     "build:cli": "npm run build -w @homebridge-ev-solar-charger/cli",
+    "build:plugin": "npm run build -w homebridge-ev-solar-charger",
     "lint": "eslint 'packages/*/src/**/*.ts'"
   },
   "engines": {
