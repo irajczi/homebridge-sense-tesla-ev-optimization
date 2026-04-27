@@ -11,7 +11,8 @@
     "build:core": "npm run build -w @homebridge-ev-solar-charger/core",
     "build:cli": "npm run build -w @homebridge-ev-solar-charger/cli",
     "build:plugin": "npm run build -w homebridge-ev-solar-charger",
-    "lint": "eslint 'packages/*/src/**/*.ts'"
+    "lint": "eslint 'packages/*/src/**/*.ts'",
+    "test": "vitest run --reporter=verbose"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -23,6 +24,7 @@
     "homebridge": "^1.8.0",
     "rimraf": "^5.0.0",
     "typescript": "^5.0.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.1.0"
   }
 }
