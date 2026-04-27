@@ -1,0 +1,39 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build --workspaces
+
+      - name: Publish @homebridge-ev-solar-charger/core
+        run: |
+          cd packages/core
+          npm publish --provenance --access public
+
+      - name: Publish homebridge-ev-solar-charger
+        run: |
+          cd packages/homebridge-plugin
+          npm publish --provenance --access public
