@@ -6,7 +6,7 @@ import { dump as toYaml } from 'js-yaml';
 import { type AppConfig, loadConfig, validateConfig } from '@homebridge-ev-solar-charger/core';
 
 const TESLA_AUTH_URL = 'https://auth.tesla.com/oauth2/v3';
-const TESLA_REDIRECT_URI = 'http://localhost';
+const TESLA_REDIRECT_URI = 'https://irajczi.github.io/homebridge-sense-tesla-ev-optimization/callback';
 const TESLA_SCOPE = 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds';
 
 const DEFAULT_CONFIG_PATH = './config.yaml';
@@ -226,9 +226,8 @@ async function runTeslaOAuth(clientId: string, clientSecret: string): Promise<st
   console.log('\n  ── Tesla Authorization ──────────────────────────────────────────────');
   console.log('  Open this URL in your browser to authorize access to your Tesla:\n');
   console.log(`  ${authUrl.toString()}\n`);
-  console.log('  After approving, your browser will redirect to http://localhost');
-  console.log('  The page will show an error — that is expected.');
-  console.log('  Copy the full URL from the browser address bar and paste it below.');
+  console.log('  After approving, you will land on a page that shows your authorization');
+  console.log('  code. Copy the full URL from the browser address bar and paste it below.');
   console.log('  ─────────────────────────────────────────────────────────────────────\n');
 
   const { redirectUrl } = await inquirer.prompt<{ redirectUrl: string }>([
