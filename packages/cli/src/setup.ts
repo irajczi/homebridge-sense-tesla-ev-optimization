@@ -6,7 +6,6 @@ import { dump as toYaml } from 'js-yaml';
 import { type AppConfig, loadConfig, validateConfig } from '@homebridge-ev-solar-charger/core';
 
 const TESLA_AUTH_URL = 'https://auth.tesla.com/oauth2/v3';
-const TESLA_REDIRECT_URI = 'https://irajczi.github.io/homebridge-sense-tesla-ev-optimization/callback';
 const TESLA_SCOPE = 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds';
 
 const DEFAULT_CONFIG_PATH = './config.yaml';
@@ -147,10 +146,31 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
 
   const resolvedSecret = fleet_api_key.length > 0 ? fleet_api_key : current!.fleet_api_key;
 
+  const { redirect_uri } = await inquirer.prompt<{ redirect_uri: string }>([
+    {
+      type: 'input',
+      name: 'redirect_uri',
+      message: 'OAuth redirect URI (must be registered in your Tesla developer app):',
+      default: current?.redirect_uri ?? '',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        const trimmed = v.trim();
+        if (!trimmed) return 'Redirect URI is required';
+        try {
+          new URL(trimmed);
+          return true;
+        } catch {
+          return 'Enter a valid URL (e.g. https://you.github.io/your-repo/callback)';
+        }
+      },
+    },
+  ]);
+
   let refresh_token: string;
   const credentialsChanged =
     fleet_client_id.trim() !== current?.fleet_client_id ||
-    fleet_api_key.length > 0;
+    fleet_api_key.length > 0 ||
+    redirect_uri !== current?.redirect_uri;
 
   if (current?.refresh_token && !credentialsChanged) {
     const { keepToken } = await inquirer.prompt<{ keepToken: boolean }>([
@@ -164,10 +184,10 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
     if (keepToken) {
       refresh_token = current.refresh_token;
     } else {
-      refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret);
+      refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret, redirect_uri);
     }
   } else {
-    refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret);
+    refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret, redirect_uri);
   }
 
   const { email, vin } = await inquirer.prompt<{ email: string; vin: string }>([
@@ -203,13 +223,14 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
     fleet_client_id: fleet_client_id.trim(),
     fleet_api_key: resolvedSecret,
     refresh_token,
+    redirect_uri,
   };
   if (email) tesla.email = email.trim();
   if (vin) tesla.vin = vin.trim().toUpperCase();
   return tesla;
 }
 
-async function runTeslaOAuth(clientId: string, clientSecret: string): Promise<string> {
+async function runTeslaOAuth(clientId: string, clientSecret: string, redirectUri: string): Promise<string> {
   const codeVerifier = randomBytes(32).toString('base64url');
   const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
   const state = randomBytes(16).toString('hex');
@@ -217,7 +238,7 @@ async function runTeslaOAuth(clientId: string, clientSecret: string): Promise<st
   const authUrl = new URL(`${TESLA_AUTH_URL}/authorize`);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('redirect_uri', TESLA_REDIRECT_URI);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('scope', TESLA_SCOPE);
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
@@ -260,7 +281,7 @@ async function runTeslaOAuth(clientId: string, clientSecret: string): Promise<st
       client_id: clientId,
       client_secret: clientSecret,
       code,
-      redirect_uri: TESLA_REDIRECT_URI,
+      redirect_uri: redirectUri,
       code_verifier: codeVerifier,
     }).toString(),
   });
@@ -368,6 +389,7 @@ function printSummary(config: AppConfig, configPath: string): void {
   console.log(`  Sense password       : ${'*'.repeat(8)}`);
   console.log(`  Tesla client ID      : ${tesla.fleet_client_id}`);
   console.log(`  Tesla client secret  : ${'*'.repeat(8)}`);
+  console.log(`  Tesla redirect URI   : ${tesla.redirect_uri}`);
   if (tesla.email) console.log(`  Tesla email          : ${tesla.email}`);
   if (tesla.vin)   console.log(`  Tesla VIN            : ${tesla.vin}`);
   console.log(`  Min amps             : ${charging.min_amps}A`);

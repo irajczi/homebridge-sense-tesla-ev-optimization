@@ -31,6 +31,11 @@ tesla:
   # The app updates this value automatically if Tesla rotates the token.
   refresh_token: "your-tesla-oauth2-refresh-token"
 
+  # OAuth redirect URI registered in your Tesla developer app.
+  # Must match exactly what you entered in the Tesla developer portal.
+  # The callback/index.html in this repo can be hosted at this URL via GitHub Pages.
+  redirect_uri: "https://you.github.io/your-repo/callback"
+
   # Tesla account email address (optional).
   # email: "you@tesla.com"
 

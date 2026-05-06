@@ -265,6 +265,7 @@ pwd   # run this from inside the repo directory
 | `tesla.fleet_client_id` | Yes | App client ID (UUID) from developer.tesla.com |
 | `tesla.fleet_api_key` | Yes | App client secret from developer.tesla.com |
 | `tesla.refresh_token` | Yes | OAuth refresh token — obtained automatically by the setup wizard |
+| `tesla.redirect_uri` | Yes | OAuth redirect URI registered in your Tesla developer app |
 | `tesla.vin` | No | VIN of the vehicle to charge (defaults to first on account) |
 | `charging.min_amps` | Yes | Minimum charging rate (1–48). Session starts only when surplus supports this. |
 | `charging.max_amps` | Yes | Maximum charging rate (1–48). Must be ≥ min_amps. |
@@ -313,7 +314,7 @@ Tesla shut down the unofficial Owner's API in May 2025. All vehicles now require
 2. Fill in the required fields (for personal use, any values work):
    - **Application name:** anything, e.g. `My Solar Charger`
    - **OAuth Grant Type:** select **Authorization Code** *(not Machine-to-Machine — personal vehicles require the Authorization Code flow)*
-   - **Allowed origin / Redirect URI:** `http://localhost`
+   - **Allowed Redirect URI:** your callback URL from Step 4B — `https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO-NAME/callback`
 3. Under **Scopes**, enable:
    - `vehicle_device_data`
    - `vehicle_cmds`
@@ -333,24 +334,31 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 - `private-key.pem` — keep this secret, never commit it
 - `public-key.pem` — this gets hosted publicly (safe to share)
 
-### Step 4 — Host the public key at your GitHub Pages domain
+### Step 4 — Host the public key and callback page via GitHub Pages
 
-Tesla looks up the public key at `https://YOUR-GITHUB-USERNAME.github.io/.well-known/appspecific/com.tesla.3p.public-key.pem`. This must be served from the **root** of your GitHub Pages domain (not a project sub-path).
+You need two things accessible at public URLs:
 
-The easiest way is a dedicated user Pages repository:
+**A) Public key** — Tesla verifies your application identity against this URL:
+`https://YOUR-GITHUB-USERNAME.github.io/.well-known/appspecific/com.tesla.3p.public-key.pem`
 
-1. Create a new GitHub repository named exactly `YOUR-GITHUB-USERNAME.github.io`.
-2. In that repo, create the file `.well-known/appspecific/com.tesla.3p.public-key.pem` and paste in the contents of your `public-key.pem`.
-3. Go to the repo's **Settings → Pages** → Source: **Deploy from a branch** → Branch: **main / (root)** → **Save**.
-4. Wait ~2 minutes, then verify it's live:
+This must be at the **root** of your GitHub Pages domain, not a project sub-path. The easiest way is a dedicated user Pages repository:
+
+1. Create a repository named exactly `YOUR-GITHUB-USERNAME.github.io`.
+2. Add `.well-known/appspecific/com.tesla.3p.public-key.pem` with the contents of your `public-key.pem`.
+3. Enable Pages: **Settings → Pages → Deploy from branch → main / (root) → Save**.
+4. Verify after ~2 minutes:
 
 ```bash
 curl https://YOUR-GITHUB-USERNAME.github.io/.well-known/appspecific/com.tesla.3p.public-key.pem
 ```
 
-It should print your public key. If you get a 404, wait a minute and retry.
+**B) OAuth callback page** — after you authorize in a browser, Tesla redirects here with an authorization code. The `callback/index.html` file in this repo is a ready-made page for this:
 
-> **Note:** If you use a project Pages repo (e.g. this one), the key would be served at a sub-path and Tesla's verification would fail. Use the user Pages repo (`YOUR-GITHUB-USERNAME.github.io`) as shown above.
+1. Enable GitHub Pages on **this forked repo** (Settings → Pages → Deploy from branch → main / (root) → Save).
+2. Your callback URL will be: `https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO-NAME/callback`
+3. Verify: `curl https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPO-NAME/callback` should return HTML.
+
+You will enter this callback URL in the next step and again during setup.
 
 ### Step 5 — Register as a Tesla partner (one-time API call)
 

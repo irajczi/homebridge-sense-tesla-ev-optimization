@@ -44,6 +44,12 @@
         "required": true,
         "description": "Obtained by running the CLI setup wizard (node packages/cli/dist/index.js). The token is saved here and rotated automatically."
       },
+      "teslaRedirectUri": {
+        "title": "Tesla OAuth Redirect URI",
+        "type": "string",
+        "required": true,
+        "description": "The redirect URI registered in your Tesla developer app (e.g. https://you.github.io/your-repo/callback). Must exactly match what is registered."
+      },
       "teslaEmail": {
         "title": "Tesla Account Email (optional)",
         "type": "string",
@@ -116,7 +122,7 @@
       "title": "Tesla Fleet API",
       "expandable": true,
       "expanded": true,
-      "items": ["fleetClientId", "fleetApiKey", "teslaRefreshToken", "teslaEmail", "vehicleVIN"]
+      "items": ["fleetClientId", "fleetApiKey", "teslaRefreshToken", "teslaRedirectUri", "teslaEmail", "vehicleVIN"]
     },
     {
       "type": "section",
