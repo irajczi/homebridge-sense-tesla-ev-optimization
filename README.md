@@ -140,14 +140,14 @@ Leave the terminal window open (or run it as a background service — see below)
 
 ## Stopping the charger
 
-Press **Ctrl + C** in the terminal. The program catches the signal, stops the polling loop, closes the Sense WebSocket cleanly, and exits. The car continues charging at whatever amp setpoint was last commanded — it does not stop charging when the program exits.
+Press **Ctrl + C** in the terminal. The program catches the signal, stops the polling loop, closes the Sense WebSocket cleanly, and exits.
+
+> **Important:** Stopping the program does **not** stop the car from charging. The car will continue charging at whatever amp setpoint was last commanded. To stop charging you need to use the Tesla app, tap the charge port button on the car, or unplug the cable.
 
 ```
 ^C
 [2026-04-08 15:44:07.112] [INFO ] SIGINT received — shutting down
 ```
-
-To also stop the car from charging, use the Tesla app or tap the charge port button before stopping the program.
 
 ---
 
@@ -254,6 +254,71 @@ pwd   # run this from inside the repo directory
 
 ---
 
+## Homebridge plugin
+
+If you run Homebridge, you can control solar-optimised charging directly from the Home app using a virtual switch instead of keeping a terminal open.
+
+### How it works
+
+Installing the plugin adds a single **EV Solar Charger** switch to HomeKit:
+
+- **Switch ON** — starts the polling loop; the plugin reads Sense every poll cycle and adjusts Tesla charge amps to match available solar surplus.
+- **Switch OFF** — stops the polling loop. The car continues charging at whatever amp rate was last set — it does not stop. To fully stop charging, use the Tesla app or unplug.
+
+The switch state is persisted across Homebridge restarts. If the switch was ON when Homebridge shut down, charging optimisation resumes automatically on the next launch without any user action.
+
+The optional **auto-off** feature flips the switch OFF automatically after a configurable number of minutes with no solar production (e.g. after sunset), so the car stops being actively managed overnight.
+
+### Installation
+
+#### Option A — Homebridge UI (recommended)
+
+Search for `homebridge-ev-solar-charger` in the Homebridge plugin catalogue and click **Install**.
+
+#### Option B — command line
+
+```bash
+npm install -g homebridge-ev-solar-charger
+```
+
+### Getting your Tesla credentials
+
+Before configuring the plugin, you need a **refresh token** from Tesla. The easiest way is to run the CLI setup wizard (see [First-time setup](#first-time-setup) above) which handles the OAuth flow and prints all the values you need.
+
+If you installed the plugin from npm rather than cloning this repo, you can still run the wizard temporarily:
+
+```bash
+npx homebridge-ev-solar-charger setup
+```
+
+After the wizard completes, open `config.yaml` — copy the values under `tesla:` into the Homebridge plugin settings.
+
+### Configuring the plugin in Homebridge UI
+
+Go to **Homebridge → Plugins → EV Solar Charger → Settings**:
+
+| Field | Where to get it |
+|---|---|
+| **Sense Account Email** | Your Sense login email |
+| **Sense Account Password** | Your Sense login password |
+| **Tesla Fleet API Client ID** | UUID from developer.tesla.com |
+| **Tesla Fleet API Client Secret** | Secret from developer.tesla.com |
+| **Tesla Refresh Token** | From `config.yaml` after running the setup wizard |
+| **Vehicle VIN** (optional) | Leave blank to use the first vehicle on the account |
+| **Minimum Charge Amps** | Default: 5 |
+| **Maximum Charge Amps** | Default: 32 — match your EVSE's rated capacity |
+| **Polling Interval** | Default: 60 seconds |
+| **Stop when insufficient** | `true` stops charging when surplus drops below minimum |
+| **Auto-off after no solar** | Minutes before auto-off after sunset (leave blank to disable) |
+
+Save and restart Homebridge. The **EV Solar Charger** switch will appear in your Home app within a few seconds.
+
+### Token rotation
+
+Tesla periodically rotates refresh tokens. The plugin saves the new token automatically to Homebridge's internal storage directory — you do not need to update the plugin settings manually. If you ever see a Tesla authentication error in the Homebridge logs, re-run the setup wizard and paste the new refresh token into the plugin settings.
+
+---
+
 ## Configuration reference
 
 `config.yaml` is the only file you need to edit. A fully commented example is in [`config.example.yaml`](config.example.yaml).
@@ -265,7 +330,7 @@ pwd   # run this from inside the repo directory
 | `tesla.fleet_client_id` | Yes | App client ID (UUID) from developer.tesla.com |
 | `tesla.fleet_api_key` | Yes | App client secret from developer.tesla.com |
 | `tesla.refresh_token` | Yes | OAuth refresh token — obtained automatically by the setup wizard |
-| `tesla.redirect_uri` | Yes | OAuth redirect URI registered in your Tesla developer app |
+| `tesla.redirect_uri` | No | OAuth redirect URI — stored by the setup wizard for future re-authorization |
 | `tesla.vin` | No | VIN of the vehicle to charge (defaults to first on account) |
 | `charging.min_amps` | Yes | Minimum charging rate (1–48). Session starts only when surplus supports this. |
 | `charging.max_amps` | Yes | Maximum charging rate (1–48). Must be ≥ min_amps. |

@@ -25,6 +25,9 @@
  *       will cause descriptive errors on first Tesla or Sense API call.
  */
 
+import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+
 import {
   API,
   DynamicPlatformPlugin,
@@ -72,7 +75,28 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
       this.appConfig.sense.password,
       (level, msg) => this.log[level](`[Sense] ${msg}`),
     );
-    this.tesla = new TeslaClient(this.appConfig.tesla);
+
+    // Homebridge's persist directory survives restarts and plugin updates.
+    // We store a rotated refresh token here so it takes precedence over the
+    // (potentially stale) value in Homebridge's config.json.
+    const tokenPersistPath = join(this.api.user.persistPath(), 'ev-solar-charger-refresh-token.txt');
+    const teslaConfig = { ...this.appConfig.tesla };
+    try {
+      const saved = readFileSync(tokenPersistPath, 'utf8').trim();
+      if (saved) {
+        teslaConfig.refresh_token = saved;
+        this.log.debug('Loaded rotated refresh token from plugin storage');
+      }
+    } catch { /* no persisted token yet — use config value */ }
+
+    this.tesla = new TeslaClient(teslaConfig, (newToken) => {
+      try {
+        writeFileSync(tokenPersistPath, newToken, { encoding: 'utf8', mode: 0o600 });
+        this.log.debug('Refresh token rotated and saved to plugin storage');
+      } catch (err) {
+        this.log.error('Failed to save rotated refresh token:', (err as Error).message);
+      }
+    });
 
     this.log.debug('Finished initializing platform:', this.config.name);
 

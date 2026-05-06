@@ -12,7 +12,7 @@ export interface AppConfig {
     fleet_client_id: string;
     fleet_api_key: string;
     refresh_token: string;
-    redirect_uri: string;
+    redirect_uri?: string;
     email?: string;
     vin?: string;
   };
@@ -52,7 +52,6 @@ export function validateConfig(config: AppConfig): void {
   requireString(config?.tesla?.fleet_client_id, 'tesla.fleet_client_id', errors);
   requireString(config?.tesla?.fleet_api_key, 'tesla.fleet_api_key', errors);
   requireString(config?.tesla?.refresh_token, 'tesla.refresh_token', errors);
-  requireString(config?.tesla?.redirect_uri, 'tesla.redirect_uri', errors);
 
   if (config?.charging == null) {
     errors.push('charging section is required');
