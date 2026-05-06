@@ -299,57 +299,93 @@ Your client ID or client secret is wrong, or the application has been deleted fr
 
 ## Tesla Fleet API setup
 
-Tesla shut down the unofficial Owner's API in May 2025. All vehicles now require the official Fleet API. Setup takes about 15 minutes and requires a one-time registration on Tesla's developer portal.
+Tesla shut down the unofficial Owner's API in May 2025. All vehicles now require the official Fleet API. This is a one-time setup that takes about 20 minutes.
 
 ### Step 1 — Create a Tesla developer account
 
 1. Go to [developer.tesla.com](https://developer.tesla.com) and sign in with your Tesla account.
-2. Accept the developer terms if prompted.
-3. Complete the one-time registration fee step on the developer portal.
+2. Accept the developer terms and complete the one-time registration fee step.
 
 ### Step 2 — Register an application
 
 1. In the developer portal, click **Create Application**.
-2. Fill in the required fields (for personal use, anything descriptive works):
-   - **Application name:** e.g. `My Solar Charger`
-   - **Description:** e.g. `Adjusts charging rate based on solar surplus`
-   - **Allowed origin:** `http://localhost` (required by the form; not used by this program)
-3. Under **Scopes**, enable all three:
-   - `vehicle_device_data` — read vehicle state and list vehicles
-   - `vehicle_cmds` — send commands (wake, start/stop charging)
-   - `vehicle_charging_cmds` — set charging amps
-4. Click **Create**. Tesla shows you a **Client ID** and **Client Secret** — copy both immediately. The client secret is only shown once.
+2. Fill in the required fields (for personal use, any values work):
+   - **Application name:** anything, e.g. `My Solar Charger`
+   - **OAuth Grant Type:** select **Machine-to-Machine**
+   - **Allowed origin / Redirect URI:** `http://localhost` (required by the form)
+3. Under **Scopes**, enable:
+   - `vehicle_device_data`
+   - `vehicle_cmds`
+   - `vehicle_charging_cmds`
+4. Click **Create**. Copy the **Client ID** (UUID) and **Client Secret** immediately — the secret is only shown once. Wrap them in single quotes when using in the terminal to avoid shell misinterpretation of special characters.
 
-### Step 3 — Run setup
+### Step 3 — Generate an EC key pair
 
-Run the setup wizard and enter the credentials when prompted:
+Tesla requires you to host a public key so it can verify your application's identity during partner registration. Run this once on any machine:
+
+```bash
+openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem
+openssl ec -in private-key.pem -pubout -out public-key.pem
+```
+
+- `private-key.pem` — keep this secret, never commit it
+- `public-key.pem` — this gets hosted publicly (safe to share)
+
+### Step 4 — Host the public key on GitHub Pages
+
+The public key must be reachable at a specific URL. If you forked this repo, the path is already set up — you just need to replace the key file and enable Pages.
+
+1. Copy the contents of `public-key.pem` into `.well-known/appspecific/com.tesla.3p.public-key.pem` in the repo root and push to `main`.
+2. Go to your repo → **Settings → Pages** → Source: **Deploy from a branch** → Branch: **main / (root)** → **Save**.
+3. Wait ~2 minutes, then verify it's live:
+
+```bash
+curl https://YOUR-GITHUB-USERNAME.github.io/homebridge-sense-tesla-ev-optimization/.well-known/appspecific/com.tesla.3p.public-key.pem
+```
+
+It should print your public key. If you get a 404, wait a minute and retry.
+
+### Step 5 — Register as a Tesla partner (one-time API call)
+
+Once the public key URL is responding, run these commands (replace with your actual credentials):
+
+```bash
+CLIENT_ID='your-client-id-uuid'
+CLIENT_SECRET='your-client-secret'
+
+TOKEN=$(curl -s -X POST https://auth.tesla.com/oauth2/v3/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=$CLIENT_ID" \
+  -d "client_secret=$CLIENT_SECRET" \
+  -d "scope=openid vehicle_device_data vehicle_cmds vehicle_charging_cmds" \
+  -d "audience=https://fleet-api.prd.na.vn.cloud.tesla.com" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "YOUR-GITHUB-USERNAME.github.io"}'
+```
+
+A successful response looks like `{"response":{"domain":"...","public_key":"..."},...}`. You do not need to save the token — it was only needed for this registration step. The app manages its own tokens automatically at runtime.
+
+### Step 6 — Approve the app in the Tesla mobile app
+
+1. In the Tesla app, go to **Account → Security & Privacy → Third-Party App Access**.
+2. Your registered application should appear — tap it and tap **Allow**.
+
+### Step 7 — Run setup
 
 ```bash
 node packages/cli/dist/index.js
 ```
 
-The wizard will ask for:
-- **Fleet API client ID** — the UUID from the developer portal (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
-- **Fleet API client secret** — the client secret
-
-Your `config.yaml` will look like:
-
-```yaml
-tesla:
-  fleet_client_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  fleet_api_key: "your-client-secret-here"
-```
-
-### Step 4 — Approve the application in the Tesla app
-
-Tesla requires a one-time approval before the app can send commands to your vehicle.
-
-1. In the Tesla app, go to **Security & Privacy → Third-Party App Access** (look in Account or Settings if you can't find it).
-2. Your registered application should appear — tap it and tap **Allow**.
+Enter your **Fleet API client ID** and **client secret** when prompted. If you already ran setup before, the wizard will show a checklist — select **Tesla credentials** to update just that section without re-entering your Sense password.
 
 ### Notes
 
-- Fleet API access tokens expire after ~8 hours. The program re-authenticates automatically.
-- Your `client_id` and `client_secret` are permanent — you only need to rotate them if you regenerate them in the developer portal.
-- **Region:** The default API base URL is North America (`fleet-api.prd.na.vn.cloud.tesla.com`). If your Tesla account is based in Europe or China, open [`packages/core/src/tesla.ts`](packages/core/src/tesla.ts) and update the `FLEET_API_BASE` constant to the regional URL in the comment at the top of that file.
-- **Newer vehicles and signed commands:** Tesla's 2021+ architectures (Plaid models, Cybertruck, 2024+ Model 3 Highland) require commands to be cryptographically signed. This program does not currently implement command signing. If Fleet API authenticates successfully but charging commands fail with an "unsigned commands not supported" error, see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command) for the additional setup steps. Pre-2021 vehicles are not affected.
+- Fleet API access tokens expire after ~8 hours. The program re-authenticates automatically — no action needed.
+- Your client ID and secret are permanent unless you regenerate them in the developer portal.
+- **Region:** The default API URL is North America. If your Tesla account is in Europe or China, open [`packages/core/src/tesla.ts`](packages/core/src/tesla.ts) and update the `FLEET_API_BASE` constant to the correct regional URL shown in the comment at the top of that file.
+- **Newer vehicles and signed commands:** Tesla's 2021+ architectures (Plaid, Cybertruck, 2024+ Model 3 Highland) require commands to be cryptographically signed. This program does not currently implement command signing. If Fleet API authenticates but charging commands fail with "unsigned commands not supported", see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command). Pre-2021 vehicles are not affected.
