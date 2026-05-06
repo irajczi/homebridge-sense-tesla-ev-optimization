@@ -306,40 +306,32 @@ The car has 30 seconds to respond. If it consistently fails, check that the car 
 **"Sense auth failed: 401"**
 Your Sense email or password is wrong. Re-run setup (`rm config.yaml && node packages/cli/dist/index.js`) to enter them again.
 
-**"Tesla Owner's API auth failed: 401"**
-Your refresh token has expired or been revoked (this happens if you change your Tesla password). Get a new token using the Auth app and update `tesla.password` in `config.yaml`.
+**"Tesla Owner's API has been shut down"**
+Tesla retired the Owner's API in May 2025. Delete `config.yaml`, re-run `node packages/cli/dist/index.js`, and choose **Fleet API** mode. See the Fleet API setup section below for registration steps.
 
 ---
 
 ## Tesla API setup
 
-Tesla has two APIs, and which one works for your car depends on when it was built. This section explains the difference, helps you pick the right path, and walks through the setup for each.
+> **Tesla has shut down the Owner's API (May 2025).** If you previously used `owners_api` mode and are now seeing a 412 error saying "Endpoint is only available on fleetapi", Tesla has permanently retired the unofficial Owner's API for all vehicles regardless of age. **Everyone must now use Fleet API.** Skip directly to [Option B — Fleet API](#option-b--fleet-api-required-for-all-vehicles) below.
 
 ---
 
 ### Which path is right for your vehicle?
 
-| Vehicle | Recommended mode | Notes |
-|---|---|---|
-| Model 3 (2017–2023, original body) | `owners_api` | Simplest path. Refresh token is all you need. |
-| Model Y (2020–2022) | `owners_api` | Same as above. |
-| Model S / Model X (pre-2021) | `owners_api` | Works well. |
-| Model 3 Highland (2024+) | `fleet_api` | New architecture; Owner's API commands may be unreliable. |
-| Model Y (2023+, new arch.) | `fleet_api` | Depends on build date — try `owners_api` first. |
-| Model S Plaid / Model X Plaid (2021+) | `fleet_api` | New architecture; see note below. |
-| Cybertruck (all) | `fleet_api` | Fleet API required. |
+All vehicles now require `fleet_api`. The table below is kept for historical reference.
 
-**Not sure which you have?** Open the Tesla app → tap your car → tap the three-dot menu → About. If the software version shows "2023.x" or later on a Model S/X, or your Model 3/Y was purchased in 2024 or later, assume you need `fleet_api`. If in doubt, try `owners_api` first — the worst that can happen is a 401 error and you switch modes.
+| Vehicle | Notes |
+|---|---|
+| Any Tesla (all models, all years) | `fleet_api` required — Owner's API shut down May 2025 |
 
-> **Note on newer vehicles and signed commands.** Tesla's 2021+ vehicle architectures (Plaid models, Cybertruck, 2024+ Model 3 Highland) use a Vehicle Command Protocol that requires vehicle commands to be cryptographically signed by a registered key pair. This signing layer sits on top of the Fleet API and requires additional infrastructure (a local command proxy or Tesla's official mobile SDK). **This program does not currently implement command signing.** If you have one of these newer vehicles and find that `fleet_api` mode authenticates successfully but charging commands fail with a "unsigned commands not supported" style error, see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command) on GitHub for the additional setup steps. For most users with pre-2024 vehicles, `owners_api` works without any of this.
+> **Note on newer vehicles and signed commands.** Tesla's 2021+ vehicle architectures (Plaid models, Cybertruck, 2024+ Model 3 Highland) use a Vehicle Command Protocol that requires vehicle commands to be cryptographically signed. **This program does not currently implement command signing.** If your vehicle authenticates successfully via Fleet API but charging commands fail with an "unsigned commands not supported" error, see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command) for the additional setup steps.
 
 ---
 
-### Option A — Owner's API (simpler, personal use)
+### Option A — Owner's API ~~(simpler, personal use)~~
 
-The Owner's API is Tesla's unofficial API originally built for the official Tesla mobile app. It is not publicly documented by Tesla but has been reverse-engineered and is widely used for personal projects. It works by exchanging a refresh token for short-lived access tokens.
-
-**Who should use this:** Anyone with a pre-2024 Tesla who wants the simplest possible setup.
+> **Removed.** Tesla shut down the Owner's API in May 2025. `owners_api` mode no longer works for any vehicle. Use Fleet API below.
 
 #### Step 1 — Get a refresh token
 
@@ -378,7 +370,7 @@ tesla:
 
 ---
 
-### Option B — Fleet API (official, required for newer vehicles)
+### Option B — Fleet API (required for all vehicles)
 
 The Tesla Fleet API is the officially supported API for third-party applications. It uses standard OAuth2 `client_credentials` with credentials you register on Tesla's developer portal. Setup takes about 15 minutes.
 

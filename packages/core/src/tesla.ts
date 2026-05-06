@@ -252,6 +252,13 @@ export class TeslaClient {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
+      if (res.status === 412 && body.includes('fleetapi')) {
+        throw new Error(
+          'Tesla Owner\'s API has been shut down. Switch to Fleet API mode: ' +
+          'delete config.yaml, re-run setup, and choose "Fleet API". ' +
+          'See the README Tesla API setup section for registration steps.',
+        );
+      }
       throw new Error(`Tesla GET ${path} failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
     }
     return res.json() as Promise<ApiEnvelope<T>>;
