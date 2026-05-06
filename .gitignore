@@ -28,3 +28,9 @@ npm-debug.log*
 # Environment files (may contain secrets)
 .env
 .env.local
+
+# User config — contains credentials, never commit
+config.yaml
+
+# Claude Code internal files
+.claude/worktrees/
