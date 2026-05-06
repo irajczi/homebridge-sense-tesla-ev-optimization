@@ -9,8 +9,8 @@
     "watch": "tsc --watch"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "homebridge": ">=1.6.0"
+    "node": ">=22.0.0",
+    "homebridge": ">=2.0.0"
   },
   "keywords": [
     "homebridge-plugin",
@@ -22,14 +22,14 @@
     "homebridge"
   ],
   "peerDependencies": {
-    "homebridge": ">=1.6.0"
+    "homebridge": ">=2.0.0"
   },
   "dependencies": {
     "@homebridge-ev-solar-charger/core": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "homebridge": "^1.8.0",
+    "homebridge": "^2.0.0",
     "rimraf": "^5.0.0",
     "typescript": "^5.0.0"
   }

@@ -27,15 +27,49 @@ There is no cloud service or subscription involved. The program runs on your own
 
 ## Installation
 
+### 1. Clone the repository
+
+GitHub no longer accepts passwords for Git operations. Use one of these two methods:
+
+**Option A — SSH (recommended if you use GitHub regularly)**
+
+First, check whether you already have an SSH key:
+
 ```bash
-# 1. Clone the repository
-git clone https://github.com/ianrajczi/homebridge-sense-tesla-ev-optimization.git
+ls ~/.ssh/id_ed25519.pub
+```
+
+If the file does not exist, generate one:
+
+```bash
+ssh-keygen -t ed25519 -C "your@email.com"
+# Accept the default path; add a passphrase or leave blank
+```
+
+Then add the public key to GitHub: copy the output of `cat ~/.ssh/id_ed25519.pub`, go to **github.com → Settings → SSH and GPG keys → New SSH key**, paste it, and save.
+
+Now clone:
+
+```bash
+git clone git@github.com:irajczi/homebridge-sense-tesla-ev-optimization.git
 cd homebridge-sense-tesla-ev-optimization
+```
 
-# 2. Install dependencies
+**Option B — HTTPS with a Personal Access Token**
+
+Go to **github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)** and generate a token with the `repo` scope. Then clone using your username and the token as the password:
+
+```bash
+git clone https://github.com/irajczi/homebridge-sense-tesla-ev-optimization.git
+# Username: your GitHub username
+# Password: paste the personal access token (not your account password)
+cd homebridge-sense-tesla-ev-optimization
+```
+
+### 2. Install dependencies and build
+
+```bash
 npm install
-
-# 3. Build the packages
 npm run build --workspaces
 ```
 
