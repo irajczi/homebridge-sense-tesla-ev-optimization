@@ -133,6 +133,7 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
  * sensePassword              → sense.password
  * fleetClientId              → tesla.fleet_client_id
  * fleetApiKey                → tesla.fleet_api_key
+ * teslaRefreshToken          → tesla.refresh_token
  * teslaEmail                 → tesla.email
  * vehicleVIN                 → tesla.vin
  * minimumChargeAmps          → charging.min_amps
@@ -150,6 +151,7 @@ function buildAppConfig(config: PlatformConfig): AppConfig {
     tesla: {
       fleet_client_id: config.fleetClientId as string,
       fleet_api_key: config.fleetApiKey as string,
+      refresh_token: config.teslaRefreshToken as string,
       email: config.teslaEmail as string | undefined,
       vin: config.vehicleVIN as string | undefined,
     },

@@ -1,8 +1,13 @@
+import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import inquirer from 'inquirer';
 import { dump as toYaml } from 'js-yaml';
 import { type AppConfig, loadConfig, validateConfig } from '@homebridge-ev-solar-charger/core';
+
+const TESLA_AUTH_URL = 'https://auth.tesla.com/oauth2/v3';
+const TESLA_REDIRECT_URI = 'http://localhost';
+const TESLA_SCOPE = 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds';
 
 const DEFAULT_CONFIG_PATH = './config.yaml';
 
@@ -140,6 +145,31 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
     },
   ]);
 
+  const resolvedSecret = fleet_api_key.length > 0 ? fleet_api_key : current!.fleet_api_key;
+
+  let refresh_token: string;
+  const credentialsChanged =
+    fleet_client_id.trim() !== current?.fleet_client_id ||
+    fleet_api_key.length > 0;
+
+  if (current?.refresh_token && !credentialsChanged) {
+    const { keepToken } = await inquirer.prompt<{ keepToken: boolean }>([
+      {
+        type: 'confirm',
+        name: 'keepToken',
+        message: 'Keep existing Tesla authorization (refresh token)?',
+        default: true,
+      },
+    ]);
+    if (keepToken) {
+      refresh_token = current.refresh_token;
+    } else {
+      refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret);
+    }
+  } else {
+    refresh_token = await runTeslaOAuth(fleet_client_id.trim(), resolvedSecret);
+  }
+
   const { email, vin } = await inquirer.prompt<{ email: string; vin: string }>([
     {
       type: 'input',
@@ -149,7 +179,7 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
       filter: (v: string) => v.trim(),
       validate: (v: string) => {
         const trimmed = v.trim();
-        if (!trimmed) return true; // optional
+        if (!trimmed) return true;
         return /\S+@\S+\.\S+/.test(trimmed) || 'Enter a valid email address';
       },
     },
@@ -161,7 +191,7 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
       filter: (v: string) => v.trim().toUpperCase(),
       validate: (v: string) => {
         const trimmed = v.trim();
-        if (!trimmed) return true; // optional
+        if (!trimmed) return true;
         if (trimmed.length !== 17) return `VIN must be exactly 17 characters (got ${trimmed.length})`;
         if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(trimmed)) return 'VIN must contain only letters (A-Z, no I/O/Q) and digits';
         return true;
@@ -171,11 +201,83 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
 
   const tesla: AppConfig['tesla'] = {
     fleet_client_id: fleet_client_id.trim(),
-    fleet_api_key: fleet_api_key.length > 0 ? fleet_api_key : current!.fleet_api_key,
+    fleet_api_key: resolvedSecret,
+    refresh_token,
   };
   if (email) tesla.email = email.trim();
   if (vin) tesla.vin = vin.trim().toUpperCase();
   return tesla;
+}
+
+async function runTeslaOAuth(clientId: string, clientSecret: string): Promise<string> {
+  const codeVerifier = randomBytes(32).toString('base64url');
+  const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+  const state = randomBytes(16).toString('hex');
+
+  const authUrl = new URL(`${TESLA_AUTH_URL}/authorize`);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', TESLA_REDIRECT_URI);
+  authUrl.searchParams.set('scope', TESLA_SCOPE);
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('code_challenge', codeChallenge);
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+
+  console.log('\n  ── Tesla Authorization ──────────────────────────────────────────────');
+  console.log('  Open this URL in your browser to authorize access to your Tesla:\n');
+  console.log(`  ${authUrl.toString()}\n`);
+  console.log('  After approving, your browser will redirect to http://localhost');
+  console.log('  The page will show an error — that is expected.');
+  console.log('  Copy the full URL from the browser address bar and paste it below.');
+  console.log('  ─────────────────────────────────────────────────────────────────────\n');
+
+  const { redirectUrl } = await inquirer.prompt<{ redirectUrl: string }>([
+    {
+      type: 'input',
+      name: 'redirectUrl',
+      message: 'Paste the redirect URL here:',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        try {
+          const url = new URL(v.trim());
+          if (!url.searchParams.has('code')) return 'No authorization code found — did you copy the full URL from the address bar?';
+          return true;
+        } catch {
+          return 'Enter a valid URL starting with http://localhost';
+        }
+      },
+    },
+  ]);
+
+  const code = new URL(redirectUrl).searchParams.get('code')!;
+
+  console.log('\n  Exchanging authorization code for refresh token…');
+
+  const tokenRes = await fetch(`${TESLA_AUTH_URL}/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: TESLA_REDIRECT_URI,
+      code_verifier: codeVerifier,
+    }).toString(),
+  });
+
+  if (!tokenRes.ok) {
+    const body = await tokenRes.text().catch(() => '');
+    throw new Error(`Tesla token exchange failed: ${tokenRes.status} ${tokenRes.statusText}${body ? ` — ${body}` : ''}`);
+  }
+
+  const data = (await tokenRes.json()) as { refresh_token: string };
+  if (!data.refresh_token) {
+    throw new Error('Tesla did not return a refresh token — make sure the offline_access scope is enabled on your application');
+  }
+
+  console.log('  Tesla authorization successful.\n');
+  return data.refresh_token;
 }
 
 async function promptCharging(current?: AppConfig['charging']): Promise<AppConfig['charging']> {

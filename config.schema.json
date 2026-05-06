@@ -38,6 +38,12 @@
         "required": true,
         "description": "The client secret from your registered application at developer.tesla.com."
       },
+      "teslaRefreshToken": {
+        "title": "Tesla Refresh Token",
+        "type": "string",
+        "required": true,
+        "description": "Obtained by running the CLI setup wizard (node packages/cli/dist/index.js). The token is saved here and rotated automatically."
+      },
       "teslaEmail": {
         "title": "Tesla Account Email (optional)",
         "type": "string",
@@ -110,7 +116,7 @@
       "title": "Tesla Fleet API",
       "expandable": true,
       "expanded": true,
-      "items": ["fleetClientId", "fleetApiKey", "teslaEmail", "vehicleVIN"]
+      "items": ["fleetClientId", "fleetApiKey", "teslaRefreshToken", "teslaEmail", "vehicleVIN"]
     },
     {
       "type": "section",

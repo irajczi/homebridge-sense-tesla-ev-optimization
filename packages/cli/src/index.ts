@@ -26,14 +26,16 @@
  *   - Any unhandled top-level rejection            → exits 1 via main().catch()
  */
 
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { dump as toYaml } from 'js-yaml';
 import {
   loadConfig,
   SenseClient,
   TeslaClient,
   SolarChargeController,
   type LogLevel,
+  type AppConfig,
 } from '@homebridge-ev-solar-charger/core';
 import { runSetup } from './setup.js';
 
@@ -65,7 +67,10 @@ async function main(): Promise<void> {
     (level, msg) => log(level, `[Sense] ${msg}`),
   );
 
-  const tesla = new TeslaClient(config.tesla);
+  const tesla = new TeslaClient(config.tesla, (newToken) => {
+    config.tesla.refresh_token = newToken;
+    persistRefreshToken(CONFIG_PATH, config, newToken);
+  });
 
   const controller = new SolarChargeController(config, sense, tesla);
 
@@ -132,6 +137,19 @@ function log(level: LogLevel, message: string): void {
     console.error(`${prefix} ${message}`);
   } else {
     console.log(`${prefix} ${message}`);
+  }
+}
+
+// ---- Token persistence ------------------------------------------------------
+
+function persistRefreshToken(configPath: string, config: AppConfig, newToken: string): void {
+  try {
+    config.tesla.refresh_token = newToken;
+    const yaml = toYaml(config, { lineWidth: 120, quotingType: '"' });
+    writeFileSync(configPath, yaml, { encoding: 'utf8', mode: 0o600 });
+    log('info', 'Refresh token rotated and saved to config');
+  } catch (err) {
+    log('error', `Failed to save rotated refresh token: ${(err as Error).message}`);
   }
 }
 

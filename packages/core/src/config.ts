@@ -11,6 +11,7 @@ export interface AppConfig {
   tesla: {
     fleet_client_id: string;
     fleet_api_key: string;
+    refresh_token: string;
     email?: string;
     vin?: string;
   };
@@ -44,15 +45,13 @@ export function loadConfig(filePath: string): AppConfig {
 export function validateConfig(config: AppConfig): void {
   const errors: string[] = [];
 
-  // ---- sense -----------------------------------------------------------------
   requireString(config?.sense?.email, 'sense.email', errors);
   requireString(config?.sense?.password, 'sense.password', errors);
 
-  // ---- tesla -----------------------------------------------------------------
   requireString(config?.tesla?.fleet_client_id, 'tesla.fleet_client_id', errors);
   requireString(config?.tesla?.fleet_api_key, 'tesla.fleet_api_key', errors);
+  requireString(config?.tesla?.refresh_token, 'tesla.refresh_token', errors);
 
-  // ---- charging --------------------------------------------------------------
   if (config?.charging == null) {
     errors.push('charging section is required');
   } else {
@@ -72,7 +71,6 @@ export function validateConfig(config: AppConfig): void {
     }
   }
 
-  // ---- homebridge (optional) -------------------------------------------------
   if (config?.homebridge !== undefined) {
     const val = config.homebridge.auto_off_after_no_solar_minutes;
     if (val !== null && (typeof val !== 'number' || val < 1)) {

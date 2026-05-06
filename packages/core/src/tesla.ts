@@ -30,6 +30,7 @@ export interface Vehicle {
 
 interface TokenResponse {
   access_token: string;
+  refresh_token?: string;
   expires_in: number;
 }
 
@@ -54,17 +55,22 @@ interface CommandResult {
 export class TeslaClient {
   private accessToken: string | null = null;
   private tokenExpiresAt = 0;
+  private refreshToken: string;
 
-  constructor(private readonly teslaConfig: AppConfig['tesla']) {}
+  constructor(
+    private readonly teslaConfig: AppConfig['tesla'],
+    private readonly onTokenRefresh?: (newToken: string) => void | Promise<void>,
+  ) {
+    this.refreshToken = teslaConfig.refresh_token;
+  }
 
   async authenticate(): Promise<void> {
     const { fleet_client_id, fleet_api_key } = this.teslaConfig;
     const body = new URLSearchParams({
-      grant_type: 'client_credentials',
+      grant_type: 'refresh_token',
       client_id: fleet_client_id,
       client_secret: fleet_api_key,
-      scope: FLEET_SCOPE,
-      audience: FLEET_API_BASE,
+      refresh_token: this.refreshToken,
     });
     const res = await fetch(AUTH_URL, {
       method: 'POST',
@@ -78,6 +84,10 @@ export class TeslaClient {
     const data = (await res.json()) as TokenResponse;
     this.accessToken = data.access_token;
     this.tokenExpiresAt = Date.now() + data.expires_in * 1_000;
+    if (data.refresh_token && data.refresh_token !== this.refreshToken) {
+      this.refreshToken = data.refresh_token;
+      await this.onTokenRefresh?.(data.refresh_token);
+    }
   }
 
   /** Return the first vehicle on the account, or the one matching `vin`. */
