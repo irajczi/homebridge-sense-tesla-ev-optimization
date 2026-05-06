@@ -134,7 +134,7 @@ export class TeslaClient {
   async getVehicle(vin?: string): Promise<Vehicle> {
     await this.ensureToken();
     const { response } = await this.get<VehicleData[]>('/api/1/vehicles');
-    const match = vin ? response.find((v) => v.vin === vin) : response[0];
+    const match = vin ? response.find((v) => v.vin.toUpperCase() === vin.toUpperCase()) : response[0];
     if (!match) {
       throw new Error(vin ? `Vehicle with VIN ${vin} not found` : 'No vehicles on account');
     }

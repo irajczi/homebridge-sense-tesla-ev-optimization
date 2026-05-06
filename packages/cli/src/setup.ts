@@ -179,7 +179,7 @@ async function promptTesla(): Promise<AppConfig['tesla']> {
 
   const tesla: AppConfig['tesla'] = { mode, ...modeCredentials };
   if (email) tesla.email = email;
-  if (vin) tesla.vin = vin;
+  if (vin) tesla.vin = vin.toUpperCase();
   return tesla;
 }
 
