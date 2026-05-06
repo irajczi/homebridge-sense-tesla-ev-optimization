@@ -84,7 +84,8 @@ async function promptSense(current?: AppConfig['sense']): Promise<AppConfig['sen
       name: 'email',
       message: 'Sense account email:',
       default: current?.email,
-      validate: (v: string) => /\S+@\S+\.\S+/.test(v) || 'Enter a valid email address',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => /\S+@\S+\.\S+/.test(v.trim()) || 'Enter a valid email address',
     },
     {
       type: 'password',
@@ -114,7 +115,15 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
       name: 'fleet_client_id',
       message: 'Fleet API client ID (UUID from developer.tesla.com):',
       default: current?.fleet_client_id,
-      validate: (v: string) => v.trim().length > 0 || 'Client ID is required',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        const trimmed = v.trim();
+        if (!trimmed) return 'Client ID is required';
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+          return 'Client ID must be a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)';
+        }
+        return true;
+      },
     },
   ]);
 
@@ -137,12 +146,26 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
       name: 'email',
       message: 'Tesla account email (optional):',
       default: current?.email ?? '',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        const trimmed = v.trim();
+        if (!trimmed) return true; // optional
+        return /\S+@\S+\.\S+/.test(trimmed) || 'Enter a valid email address';
+      },
     },
     {
       type: 'input',
       name: 'vin',
       message: 'Vehicle VIN (leave blank to use the first vehicle on the account):',
       default: current?.vin ?? '',
+      filter: (v: string) => v.trim().toUpperCase(),
+      validate: (v: string) => {
+        const trimmed = v.trim();
+        if (!trimmed) return true; // optional
+        if (trimmed.length !== 17) return `VIN must be exactly 17 characters (got ${trimmed.length})`;
+        if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(trimmed)) return 'VIN must contain only letters (A-Z, no I/O/Q) and digits';
+        return true;
+      },
     },
   ]);
 
@@ -150,8 +173,8 @@ async function promptTesla(current?: AppConfig['tesla']): Promise<AppConfig['tes
     fleet_client_id: fleet_client_id.trim(),
     fleet_api_key: fleet_api_key.length > 0 ? fleet_api_key : current!.fleet_api_key,
   };
-  if (email) tesla.email = email;
-  if (vin) tesla.vin = vin.toUpperCase();
+  if (email) tesla.email = email.trim();
+  if (vin) tesla.vin = vin.trim().toUpperCase();
   return tesla;
 }
 
