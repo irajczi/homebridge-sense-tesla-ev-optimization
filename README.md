@@ -70,7 +70,7 @@ cd homebridge-sense-tesla-ev-optimization
 
 ```bash
 npm install
-npm run build --workspaces
+npm run build
 ```
 
 ---
