@@ -127,37 +127,30 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
 /**
  * Map the flat Homebridge PlatformConfig to the nested AppConfig expected by core.
  *
- * Schema field          → AppConfig field
- * ─────────────────────────────────────────────────────────────
- * senseEmail            → sense.email
- * sensePassword         → sense.password
- * teslaMode             → tesla.mode  ('owners_api' | 'fleet_api')
- * teslaEmail            → tesla.email
- * teslaRefreshToken     → tesla.password        (owners_api only)
- * fleetClientId         → tesla.fleet_client_id (fleet_api only)
- * fleetApiKey           → tesla.fleet_api_key   (fleet_api only)
- * vehicleVIN            → tesla.vin
- * minimumChargeAmps     → charging.min_amps
- * maximumChargeAmps     → charging.max_amps
- * pollingIntervalSeconds→ charging.poll_interval_seconds
- * stopWhenInsufficient  → charging.stop_when_insufficient
+ * Schema field               → AppConfig field
+ * ──────────────────────────────────────────────────────────────
+ * senseEmail                 → sense.email
+ * sensePassword              → sense.password
+ * fleetClientId              → tesla.fleet_client_id
+ * fleetApiKey                → tesla.fleet_api_key
+ * teslaEmail                 → tesla.email
+ * vehicleVIN                 → tesla.vin
+ * minimumChargeAmps          → charging.min_amps
+ * maximumChargeAmps          → charging.max_amps
+ * pollingIntervalSeconds     → charging.poll_interval_seconds
+ * stopWhenInsufficient       → charging.stop_when_insufficient
  * autoOffAfterNoSolarMinutes → homebridge.auto_off_after_no_solar_minutes
  */
 function buildAppConfig(config: PlatformConfig): AppConfig {
-  const mode: AppConfig['tesla']['mode'] =
-    config.teslaMode === 'fleet_api' ? 'fleet_api' : 'owners_api';
-
   return {
     sense: {
       email: config.senseEmail as string,
       password: config.sensePassword as string,
     },
     tesla: {
-      mode,
+      fleet_client_id: config.fleetClientId as string,
+      fleet_api_key: config.fleetApiKey as string,
       email: config.teslaEmail as string | undefined,
-      password: config.teslaRefreshToken as string | undefined,
-      fleet_client_id: config.fleetClientId as string | undefined,
-      fleet_api_key: config.fleetApiKey as string | undefined,
       vin: config.vehicleVIN as string | undefined,
     },
     charging: {

@@ -77,50 +77,38 @@ npm run build
 
 ## First-time setup
 
-Run the interactive wizard once. It will ask for your Sense credentials, Tesla credentials, and charging preferences, then write a `config.yaml` file.
+Run the interactive wizard once. It will ask for your Sense credentials, Tesla Fleet API credentials, and charging preferences, then write a `config.yaml` file.
 
 ```bash
 node packages/cli/dist/index.js
 ```
 
-Because no `config.yaml` exists yet, the program will detect that and launch the setup wizard automatically. Answer each prompt:
-
-```
-EV Solar Charger — First-run Setup
-────────────────────────────────────
-This wizard creates your config.yaml.
-Secrets are stored in plain text; restrict file permissions if needed.
-
-Where should the config file be saved? (./config.yaml)
-
-  Sense Energy Monitor
-  ─────────────────────
-Sense account email: you@example.com
-Sense account password: ********
-
-  Tesla
-  ─────
-API mode: (Use arrow keys)
-❯ Owner's API  (personal use — OAuth2 refresh token)
-  Fleet API    (third-party app — fleet API key)
-
-Tesla OAuth2 refresh token: ********
-Tesla account email (optional):
-Vehicle VIN (leave blank to use the first vehicle on the account):
-
-  Charging Settings
-  ──────────────────
-Minimum charging amps (start/stop threshold): (5)
-Maximum charging amps: (32)
-Sense polling interval (seconds): (60)
-Stop charging when surplus drops below minimum amps? (Y/n)
-```
+Because no `config.yaml` exists yet, the program detects that and runs the full setup wizard. See [Tesla Fleet API setup](#tesla-fleet-api-setup) at the bottom of this page to get your Fleet API credentials before running this.
 
 After confirming the summary, `config.yaml` is written with permissions `600` (owner read/write only).
 
-### Getting your Tesla credentials
+---
 
-Which credentials you need depends on your vehicle model and year. See [Tesla API setup](#tesla-api-setup) at the bottom of this page for the full guide — it covers which path fits your car and walks through both the Owner's API (refresh token) and Fleet API registration step by step.
+## Updating your configuration
+
+If you need to change one section of your config without starting over — for example, updating your Tesla credentials without re-entering your Sense password — run the wizard again:
+
+```bash
+node packages/cli/dist/index.js
+```
+
+When a `config.yaml` already exists the wizard switches to update mode and shows a checklist:
+
+```
+  Found existing config: /your/path/config.yaml
+
+? Which sections do you want to update?
+ ◯ Sense credentials  (email / password)
+ ◉ Tesla credentials  (Fleet API client ID + secret)
+ ◯ Charging settings  (amps, interval, stop behaviour)
+```
+
+Select only the sections you want to change (space to toggle, enter to confirm). Fields you skip keep their current values — passwords included.
 
 ---
 
@@ -274,10 +262,8 @@ pwd   # run this from inside the repo directory
 |---|---|---|
 | `sense.email` | Yes | Sense account email |
 | `sense.password` | Yes | Sense account password |
-| `tesla.mode` | Yes | `owners_api` or `fleet_api` |
-| `tesla.password` | owners_api | OAuth2 refresh token |
-| `tesla.fleet_client_id` | fleet_api | App client ID from developer.tesla.com |
-| `tesla.fleet_api_key` | fleet_api | App client secret from developer.tesla.com |
+| `tesla.fleet_client_id` | Yes | App client ID (UUID) from developer.tesla.com |
+| `tesla.fleet_api_key` | Yes | App client secret from developer.tesla.com |
 | `tesla.vin` | No | VIN of the vehicle to charge (defaults to first on account) |
 | `charging.min_amps` | Yes | Minimum charging rate (1–48). Session starts only when surplus supports this. |
 | `charging.max_amps` | Yes | Maximum charging rate (1–48). Must be ≥ min_amps. |
@@ -306,121 +292,64 @@ The car has 30 seconds to respond. If it consistently fails, check that the car 
 **"Sense auth failed: 401"**
 Your Sense email or password is wrong. Re-run setup (`rm config.yaml && node packages/cli/dist/index.js`) to enter them again.
 
-**"Tesla Owner's API has been shut down"**
-Tesla retired the Owner's API in May 2025. Delete `config.yaml`, re-run `node packages/cli/dist/index.js`, and choose **Fleet API** mode. See the Fleet API setup section below for registration steps.
+**"Tesla Fleet API auth failed: 401"**
+Your client ID or client secret is wrong, or the application has been deleted from developer.tesla.com. Re-run setup (`node packages/cli/dist/index.js`) and re-enter your credentials.
 
 ---
 
-## Tesla API setup
+## Tesla Fleet API setup
 
-> **Tesla has shut down the Owner's API (May 2025).** If you previously used `owners_api` mode and are now seeing a 412 error saying "Endpoint is only available on fleetapi", Tesla has permanently retired the unofficial Owner's API for all vehicles regardless of age. **Everyone must now use Fleet API.** Skip directly to [Option B — Fleet API](#option-b--fleet-api-required-for-all-vehicles) below.
+Tesla shut down the unofficial Owner's API in May 2025. All vehicles now require the official Fleet API. Setup takes about 15 minutes and requires a one-time registration on Tesla's developer portal.
 
----
-
-### Which path is right for your vehicle?
-
-All vehicles now require `fleet_api`. The table below is kept for historical reference.
-
-| Vehicle | Notes |
-|---|---|
-| Any Tesla (all models, all years) | `fleet_api` required — Owner's API shut down May 2025 |
-
-> **Note on newer vehicles and signed commands.** Tesla's 2021+ vehicle architectures (Plaid models, Cybertruck, 2024+ Model 3 Highland) use a Vehicle Command Protocol that requires vehicle commands to be cryptographically signed. **This program does not currently implement command signing.** If your vehicle authenticates successfully via Fleet API but charging commands fail with an "unsigned commands not supported" error, see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command) for the additional setup steps.
-
----
-
-### Option A — Owner's API ~~(simpler, personal use)~~
-
-> **Removed.** Tesla shut down the Owner's API in May 2025. `owners_api` mode no longer works for any vehicle. Use Fleet API below.
-
-#### Step 1 — Get a refresh token
-
-Tesla's login uses a browser-based OAuth2 PKCE flow that is awkward to do manually. The easiest approach is a small app that does it for you:
-
-**iOS / Android — Auth app for Tesla**
-1. Search for **"Auth app for Tesla"** in the App Store or Google Play Store (it is a grey icon with a T).
-2. Open the app and tap **Sign in with Tesla**.
-3. Log in with your Tesla account email and password. If you have MFA enabled, complete that step too.
-4. After signing in, tap **Get Token**.
-5. Copy the **Refresh Token** — it is a long string starting with `eyJ...` or similar. It is only shown once so copy it before leaving the screen.
-
-**Mac / Windows / Linux — tesla-auth CLI**
-1. Install it: `pip install tesla-auth` (requires Python 3)
-2. Run: `tesla-auth`
-3. A browser window opens to Tesla's login page. Log in normally.
-4. After authenticating, the CLI prints your refresh token to the terminal.
-
-#### Step 2 — Configure
-
-When the setup wizard asks **"API mode"**, choose `Owner's API`. When it asks for the **OAuth2 refresh token**, paste the token you just copied.
-
-In `config.yaml` this looks like:
-
-```yaml
-tesla:
-  mode: "owners_api"
-  password: "your-long-refresh-token-here"
-```
-
-#### Notes
-
-- The token does not expire on a fixed schedule. It is valid until you change your Tesla password, sign out of all devices in the Tesla app, or explicitly revoke it.
-- Each time the program authenticates it may receive a new refresh token. It stores the latest one in memory and uses it for the next auth cycle. If you restart the program it re-reads from `config.yaml`, which still has your original token — this is fine as long as you have not revoked it.
-- If you change your Tesla password, update `tesla.password` in `config.yaml` with a freshly obtained token.
-
----
-
-### Option B — Fleet API (required for all vehicles)
-
-The Tesla Fleet API is the officially supported API for third-party applications. It uses standard OAuth2 `client_credentials` with credentials you register on Tesla's developer portal. Setup takes about 15 minutes.
-
-**Who should use this:** Anyone with a 2024+ Model 3 or Cybertruck, Plaid model owners who want official API support, or anyone who prefers to use a supported API.
-
-#### Step 1 — Create a Tesla developer account
+### Step 1 — Create a Tesla developer account
 
 1. Go to [developer.tesla.com](https://developer.tesla.com) and sign in with your Tesla account.
 2. Accept the developer terms if prompted.
-3. Tesla requires a one-time registration fee for API access. Follow the prompts on the developer portal to complete that step.
+3. Complete the one-time registration fee step on the developer portal.
 
-#### Step 2 — Register an application
+### Step 2 — Register an application
 
 1. In the developer portal, click **Create Application**.
-2. Fill in the required fields. For personal use these can be anything descriptive:
+2. Fill in the required fields (for personal use, anything descriptive works):
    - **Application name:** e.g. `My Solar Charger`
    - **Description:** e.g. `Adjusts charging rate based on solar surplus`
-   - **Allowed origin:** `http://localhost` (required field; not actually used for `client_credentials` flow)
-3. Under **Scopes**, enable:
-   - `vehicle_device_data` — needed to read vehicle state and list vehicles
-   - `vehicle_cmds` — needed to send commands (wake, start/stop charging)
-   - `vehicle_charging_cmds` — needed specifically for charging commands (set amps, start, stop)
-4. Click **Create**. Tesla will show you a **Client ID** and **Client Secret** — copy both immediately. The client secret is shown only once.
+   - **Allowed origin:** `http://localhost` (required by the form; not used by this program)
+3. Under **Scopes**, enable all three:
+   - `vehicle_device_data` — read vehicle state and list vehicles
+   - `vehicle_cmds` — send commands (wake, start/stop charging)
+   - `vehicle_charging_cmds` — set charging amps
+4. Click **Create**. Tesla shows you a **Client ID** and **Client Secret** — copy both immediately. The client secret is only shown once.
 
-#### Step 3 — Configure
+### Step 3 — Run setup
 
-When the setup wizard asks **"API mode"**, choose `Fleet API`. It will then ask for:
-- **Fleet API client ID** — paste the Client ID from the developer portal (looks like a UUID: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
-- **Fleet API client secret** — paste the Client Secret
+Run the setup wizard and enter the credentials when prompted:
 
-In `config.yaml` this looks like:
+```bash
+node packages/cli/dist/index.js
+```
+
+The wizard will ask for:
+- **Fleet API client ID** — the UUID from the developer portal (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+- **Fleet API client secret** — the client secret
+
+Your `config.yaml` will look like:
 
 ```yaml
 tesla:
-  mode: "fleet_api"
   fleet_client_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   fleet_api_key: "your-client-secret-here"
 ```
 
-#### Step 4 — Approve the application on your vehicle
+### Step 4 — Approve the application in the Tesla app
 
-Tesla's Fleet API requires a one-time approval from the vehicle owner before the application can send commands. Because this program is a personal app using `client_credentials`, you are both the developer and the owner.
+Tesla requires a one-time approval before the app can send commands to your vehicle.
 
-1. In the Tesla app, go to **Security & Privacy → Third-Party App Access** (exact path varies by app version — look in Account or Settings).
-2. Your registered application should appear. Tap it and tap **Allow**.
+1. In the Tesla app, go to **Security & Privacy → Third-Party App Access** (look in Account or Settings if you can't find it).
+2. Your registered application should appear — tap it and tap **Allow**.
 
-If it does not appear, you can also approve it programmatically via the Fleet API's `/api/1/partner_accounts` endpoint — see Tesla's Fleet API documentation at [developer.tesla.com/docs/fleet-api](https://developer.tesla.com/docs/fleet-api) for details.
+### Notes
 
-#### Notes
-
-- Fleet API access tokens are short-lived (typically 8 hours). The program re-authenticates automatically when the token nears expiry — no action needed.
-- Unlike the Owner's API, Fleet API tokens are not rotated on use. Your `client_id` and `client_secret` are permanent credentials tied to your registered application.
-- The Fleet API base URL used is North America (`fleet-api.prd.na.vn.cloud.tesla.com`). If your account is based in Europe or China, open `packages/core/src/tesla.ts` and update the `FLEET_API_BASE` constant to the appropriate regional URL listed in the comment at the top of that file.
+- Fleet API access tokens expire after ~8 hours. The program re-authenticates automatically.
+- Your `client_id` and `client_secret` are permanent — you only need to rotate them if you regenerate them in the developer portal.
+- **Region:** The default API base URL is North America (`fleet-api.prd.na.vn.cloud.tesla.com`). If your Tesla account is based in Europe or China, open [`packages/core/src/tesla.ts`](packages/core/src/tesla.ts) and update the `FLEET_API_BASE` constant to the regional URL in the comment at the top of that file.
+- **Newer vehicles and signed commands:** Tesla's 2021+ architectures (Plaid models, Cybertruck, 2024+ Model 3 Highland) require commands to be cryptographically signed. This program does not currently implement command signing. If Fleet API authenticates successfully but charging commands fail with an "unsigned commands not supported" error, see [Tesla's vehicle command proxy](https://github.com/teslamotors/vehicle-command) for the additional setup steps. Pre-2021 vehicles are not affected.

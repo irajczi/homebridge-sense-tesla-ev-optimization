@@ -26,21 +26,27 @@
         "required": true,
         "description": "The password for your Sense Energy Monitor account."
       },
-      "teslaEmail": {
-        "title": "Tesla Account Email",
+      "fleetClientId": {
+        "title": "Tesla Fleet API Client ID",
         "type": "string",
         "required": true,
-        "format": "email",
-        "description": "The email address associated with your Tesla account."
+        "description": "The client ID (UUID) from your registered application at developer.tesla.com."
       },
-      "teslaRefreshToken": {
-        "title": "Tesla Refresh Token",
+      "fleetApiKey": {
+        "title": "Tesla Fleet API Client Secret",
         "type": "string",
         "required": true,
-        "description": "Your Tesla API refresh token. Obtain this via the Tesla Auth app or similar tool."
+        "description": "The client secret from your registered application at developer.tesla.com."
+      },
+      "teslaEmail": {
+        "title": "Tesla Account Email (optional)",
+        "type": "string",
+        "required": false,
+        "format": "email",
+        "description": "Optional. The email address associated with your Tesla account."
       },
       "vehicleVIN": {
-        "title": "Vehicle VIN",
+        "title": "Vehicle VIN (optional)",
         "type": "string",
         "required": false,
         "description": "The VIN of the Tesla vehicle to control. If omitted, the first vehicle on the account will be used."
@@ -52,7 +58,7 @@
         "default": 5,
         "minimum": 1,
         "maximum": 48,
-        "description": "The minimum charging current (in amps) to allow when solar production is low."
+        "description": "The minimum charging current (in amps). The session stops when surplus drops below this if stop_when_insufficient is true."
       },
       "maximumChargeAmps": {
         "title": "Maximum Charge Amps",
@@ -63,22 +69,26 @@
         "maximum": 48,
         "description": "The maximum charging current (in amps) to allow."
       },
-      "targetSoC": {
-        "title": "Target State of Charge (%)",
-        "type": "integer",
-        "required": false,
-        "default": 80,
-        "minimum": 10,
-        "maximum": 100,
-        "description": "The target battery state of charge percentage."
-      },
       "pollingIntervalSeconds": {
         "title": "Polling Interval (seconds)",
         "type": "integer",
         "required": false,
         "default": 60,
-        "minimum": 30,
-        "description": "How often (in seconds) to poll Sense for solar data and adjust charging."
+        "minimum": 10,
+        "description": "How often (in seconds) to read Sense and adjust the charging rate."
+      },
+      "stopWhenInsufficient": {
+        "title": "Stop charging when solar is insufficient",
+        "type": "boolean",
+        "required": false,
+        "default": true,
+        "description": "If true, stops the charging session when surplus drops below the minimum amps. If false, keeps charging at minimum amps."
+      },
+      "autoOffAfterNoSolarMinutes": {
+        "title": "Auto-off after no solar (minutes)",
+        "type": "integer",
+        "required": false,
+        "description": "Stop charging automatically after this many minutes with no solar production. Leave blank to disable."
       }
     }
   },
@@ -86,42 +96,28 @@
     {
       "type": "section",
       "title": "Plugin Settings",
-      "items": [
-        "name"
-      ]
+      "items": ["name"]
     },
     {
       "type": "section",
       "title": "Sense Energy Monitor",
       "expandable": true,
       "expanded": true,
-      "items": [
-        "senseEmail",
-        "sensePassword"
-      ]
+      "items": ["senseEmail", "sensePassword"]
     },
     {
       "type": "section",
-      "title": "Tesla Account",
+      "title": "Tesla Fleet API",
       "expandable": true,
       "expanded": true,
-      "items": [
-        "teslaEmail",
-        "teslaRefreshToken",
-        "vehicleVIN"
-      ]
+      "items": ["fleetClientId", "fleetApiKey", "teslaEmail", "vehicleVIN"]
     },
     {
       "type": "section",
       "title": "Charging Settings",
       "expandable": true,
       "expanded": false,
-      "items": [
-        "minimumChargeAmps",
-        "maximumChargeAmps",
-        "targetSoC",
-        "pollingIntervalSeconds"
-      ]
+      "items": ["minimumChargeAmps", "maximumChargeAmps", "pollingIntervalSeconds", "stopWhenInsufficient", "autoOffAfterNoSolarMinutes"]
     }
   ]
 }

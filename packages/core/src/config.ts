@@ -1,18 +1,3 @@
-/**
- * config.ts — Application configuration types, loader, and validator.
- *
- * Defines the `AppConfig` interface that every package (CLI, Homebridge plugin) relies on.
- * `loadConfig()` reads a YAML file and returns a validated `AppConfig`.
- * `validateConfig()` collects ALL errors before throwing so users can fix every
- * problem in a single pass rather than discovering issues one at a time.
- *
- * Error paths:
- *   - File unreadable / not found → throws "Cannot read config file …"
- *   - YAML parse failure          → thrown by js-yaml, wrapped in the same message
- *   - Missing or invalid fields   → throws "Invalid configuration:\n  • field …"
- *     (all errors listed together)
- */
-
 import { readFileSync } from 'fs';
 import { load as parseYaml } from 'js-yaml';
 
@@ -24,13 +9,8 @@ export interface AppConfig {
     password: string;
   };
   tesla: {
-    mode: 'owners_api' | 'fleet_api';
-    /** Required for owners_api: the OAuth2 refresh token. */
-    password?: string;
-    /** Required for fleet_api: the registered application's client ID (UUID). */
-    fleet_client_id?: string;
-    /** Required for fleet_api: the registered application's client secret. */
-    fleet_api_key?: string;
+    fleet_client_id: string;
+    fleet_api_key: string;
     email?: string;
     vin?: string;
   };
@@ -47,10 +27,6 @@ export interface AppConfig {
 
 // ---- Public functions -------------------------------------------------------
 
-/**
- * Read `filePath`, parse as YAML, validate, and return a typed `AppConfig`.
- * Throws with a descriptive message on any I/O or validation failure.
- */
 export function loadConfig(filePath: string): AppConfig {
   let raw: unknown;
   try {
@@ -65,11 +41,6 @@ export function loadConfig(filePath: string): AppConfig {
   return config;
 }
 
-/**
- * Validate every field in `config`.
- * Collects all problems and throws a single error listing them all,
- * so the user can fix every issue in one pass.
- */
 export function validateConfig(config: AppConfig): void {
   const errors: string[] = [];
 
@@ -78,21 +49,8 @@ export function validateConfig(config: AppConfig): void {
   requireString(config?.sense?.password, 'sense.password', errors);
 
   // ---- tesla -----------------------------------------------------------------
-  const VALID_MODES = ['owners_api', 'fleet_api'] as const;
-  if (!config?.tesla?.mode) {
-    errors.push(`tesla.mode is required (one of: ${VALID_MODES.join(', ')})`);
-  } else if (!VALID_MODES.includes(config.tesla.mode)) {
-    errors.push(`tesla.mode "${config.tesla.mode}" is invalid — must be one of: ${VALID_MODES.join(', ')}`);
-  } else if (config.tesla.mode === 'owners_api' && !config.tesla.password) {
-    errors.push('tesla.password (OAuth2 refresh token) is required when tesla.mode is owners_api');
-  } else if (config.tesla.mode === 'fleet_api') {
-    if (!config.tesla.fleet_client_id) {
-      errors.push('tesla.fleet_client_id (application client ID) is required when tesla.mode is fleet_api');
-    }
-    if (!config.tesla.fleet_api_key) {
-      errors.push('tesla.fleet_api_key (application client secret) is required when tesla.mode is fleet_api');
-    }
-  }
+  requireString(config?.tesla?.fleet_client_id, 'tesla.fleet_client_id', errors);
+  requireString(config?.tesla?.fleet_api_key, 'tesla.fleet_api_key', errors);
 
   // ---- charging --------------------------------------------------------------
   if (config?.charging == null) {

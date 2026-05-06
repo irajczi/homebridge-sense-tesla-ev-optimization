@@ -1,56 +1,11 @@
-/**
- * tesla.ts — Tesla vehicle API client (Owner's API + Fleet API).
- *
- * Implements the commands the controller needs: authenticate, get vehicle,
- * wake vehicle, set charging amps, start charging, stop charging.
- *
- * Two authentication strategies share the same public interface:
- *   owners_api  — OAuth2 refresh_token grant against auth.tesla.com.
- *                 The refresh token may rotate; the client stores the latest
- *                 copy in memory so subsequent refreshes use the current token.
- *   fleet_api   — OAuth2 client_credentials grant. No refresh token is issued;
- *                 the client re-runs the grant when the access token expires.
- *
- * Token lifecycle:
- *   - `ensureToken()` is called before every API request.
- *   - Access tokens are considered expired 60 s before their actual expiry to
- *     avoid edge-case failures caused by clock skew or slow requests.
- *   - Tokens are stored in memory only; there is no disk cache. A Homebridge
- *     restart or process crash will trigger a fresh authentication on the next
- *     request, which is acceptable given the token TTL (typically 8 hours).
- *
- * Wake-up handling:
- *   - Vehicles go to sleep when idle. Before any command, `wakeVehicle()` must
- *     be called. It polls the vehicle state every 2 s for up to 30 s.
- *   - If the vehicle does not come online within 30 s, the method throws. The
- *     controller catches this in `tick()`, logs a warning, and tries again on
- *     the next poll cycle.
- *
- * Error paths:
- *   - Auth failure (bad token/credentials, network down)
- *     → throws "Tesla Owner's/Fleet API auth failed: <status>"
- *     → propagates to controller `tick()` which logs it and retries next cycle.
- *   - Vehicle not found on account
- *     → throws "Vehicle with VIN X not found" or "No vehicles on account"
- *   - Wake timeout (vehicle unresponsive for 30 s)
- *     → throws "Vehicle <id> did not come online within 30s"
- *   - Command rejected by vehicle (e.g. already charging, charge limit reached)
- *     → `assertResult()` throws "Tesla command <cmd> rejected: <reason>"
- *   - Any HTTP error from the API
- *     → throws "Tesla GET/POST <path> failed: <status>"
- */
-
 import { type AppConfig } from './config.js';
 
 // ---- Endpoints & constants --------------------------------------------------
 
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/token';
 
-const OWNERS_API_BASE = 'https://owner-api.teslamotors.com';
-
 /**
  * North-America Fleet API base URL.
- * Also used as the `audience` claim in the client_credentials token request.
  * EU: https://fleet-api.prd.eu.vn.cloud.tesla.com
  * CN: https://fleet-api.prd.cn.vn.cloud.tesla.com
  */
@@ -75,8 +30,6 @@ export interface Vehicle {
 
 interface TokenResponse {
   access_token: string;
-  /** Present for Owner's API refresh_token grants; absent for client_credentials. */
-  refresh_token?: string;
   expires_in: number;
 }
 
@@ -101,40 +54,39 @@ interface CommandResult {
 export class TeslaClient {
   private accessToken: string | null = null;
   private tokenExpiresAt = 0;
-  /**
-   * Mutable copy of the Owner's API refresh token.
-   * Kept separate from the config object so token rotation is safe without
-   * mutating the caller's config.
-   */
-  private refreshToken: string;
 
-  /**
-   * @param teslaConfig The `tesla` block from AppConfig.
-   *   - owners_api mode: `password` must be the OAuth2 refresh token.
-   *   - fleet_api mode: `fleet_client_id` + `fleet_api_key` must be set.
-   */
-  constructor(private readonly teslaConfig: AppConfig['tesla']) {
-    this.refreshToken = teslaConfig.password ?? '';
-  }
+  constructor(private readonly teslaConfig: AppConfig['tesla']) {}
 
-  /**
-   * Acquire a fresh access token.
-   * Owner's API: refresh_token grant (token may rotate).
-   * Fleet API:   client_credentials grant (no refresh token issued).
-   */
   async authenticate(): Promise<void> {
-    if (this.teslaConfig.mode === 'fleet_api') {
-      await this.authenticateFleetApi();
-    } else {
-      await this.authenticateOwnersApi();
+    const { fleet_client_id, fleet_api_key } = this.teslaConfig;
+    const body = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: fleet_client_id,
+      client_secret: fleet_api_key,
+      scope: FLEET_SCOPE,
+      audience: FLEET_API_BASE,
+    });
+    const res = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const resBody = await res.text().catch(() => '');
+      throw new Error(`Tesla Fleet API auth failed: ${res.status} ${res.statusText}${resBody ? ` — ${resBody}` : ''}`);
     }
+    const data = (await res.json()) as TokenResponse;
+    this.accessToken = data.access_token;
+    this.tokenExpiresAt = Date.now() + data.expires_in * 1_000;
   }
 
   /** Return the first vehicle on the account, or the one matching `vin`. */
   async getVehicle(vin?: string): Promise<Vehicle> {
     await this.ensureToken();
     const { response } = await this.get<VehicleData[]>('/api/1/vehicles');
-    const match = vin ? response.find((v) => v.vin.toUpperCase() === vin.toUpperCase()) : response[0];
+    const match = vin
+      ? response.find((v) => v.vin.toUpperCase() === vin.toUpperCase())
+      : response[0];
     if (!match) {
       throw new Error(vin ? `Vehicle with VIN ${vin} not found` : 'No vehicles on account');
     }
@@ -182,60 +134,7 @@ export class TeslaClient {
     assertResult(data.response, 'charge_stop');
   }
 
-  // ---- Auth strategies -------------------------------------------------------
-
-  private async authenticateOwnersApi(): Promise<void> {
-    const res = await fetch(AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'refresh_token',
-        client_id: 'ownerapi',
-        refresh_token: this.refreshToken,
-        scope: 'openid email offline_access',
-      }),
-    });
-    if (!res.ok) {
-      throw new Error(`Tesla Owner's API auth failed: ${res.status} ${res.statusText}`);
-    }
-    const data = (await res.json()) as TokenResponse;
-    this.accessToken = data.access_token;
-    this.tokenExpiresAt = Date.now() + data.expires_in * 1_000;
-    // Store the rotated refresh token for the next auth cycle.
-    if (data.refresh_token) {
-      this.refreshToken = data.refresh_token;
-    }
-  }
-
-  private async authenticateFleetApi(): Promise<void> {
-    const { fleet_client_id, fleet_api_key } = this.teslaConfig;
-    const body = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: fleet_client_id!,
-      client_secret: fleet_api_key!,
-      scope: FLEET_SCOPE,
-      // Tesla's auth server requires the target audience for Fleet API tokens.
-      audience: FLEET_API_BASE,
-    });
-    const res = await fetch(AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    if (!res.ok) {
-      throw new Error(`Tesla Fleet API auth failed: ${res.status} ${res.statusText}`);
-    }
-    const data = (await res.json()) as TokenResponse;
-    this.accessToken = data.access_token;
-    this.tokenExpiresAt = Date.now() + data.expires_in * 1_000;
-    // client_credentials grants never return a refresh_token — nothing to store.
-  }
-
   // ---- HTTP helpers ----------------------------------------------------------
-
-  private get apiBase(): string {
-    return this.teslaConfig.mode === 'fleet_api' ? FLEET_API_BASE : OWNERS_API_BASE;
-  }
 
   private async ensureToken(): Promise<void> {
     if (!this.accessToken || Date.now() >= this.tokenExpiresAt - TOKEN_EXPIRY_BUFFER_MS) {
@@ -244,7 +143,7 @@ export class TeslaClient {
   }
 
   private async get<T>(path: string): Promise<ApiEnvelope<T>> {
-    const res = await fetch(`${this.apiBase}${path}`, {
+    const res = await fetch(`${FLEET_API_BASE}${path}`, {
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json',
@@ -252,20 +151,13 @@ export class TeslaClient {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      if (res.status === 412 && body.includes('fleetapi')) {
-        throw new Error(
-          'Tesla Owner\'s API has been shut down. Switch to Fleet API mode: ' +
-          'delete config.yaml, re-run setup, and choose "Fleet API". ' +
-          'See the README Tesla API setup section for registration steps.',
-        );
-      }
       throw new Error(`Tesla GET ${path} failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
     }
     return res.json() as Promise<ApiEnvelope<T>>;
   }
 
   private async post<T>(path: string, body: object): Promise<ApiEnvelope<T>> {
-    const res = await fetch(`${this.apiBase}${path}`, {
+    const res = await fetch(`${FLEET_API_BASE}${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
