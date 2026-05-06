@@ -45,13 +45,19 @@ async function main(): Promise<void> {
   if (!existsSync(CONFIG_PATH)) {
     console.log(`No config found at ${CONFIG_PATH}. Starting first-run setup…\n`);
     await runSetup();
-    // If setup was cancelled (no file written), exit cleanly.
-    if (!existsSync(CONFIG_PATH)) {
-      process.exit(0);
-    }
+    if (!existsSync(CONFIG_PATH)) process.exit(0);
   }
 
-  const config = loadConfig(CONFIG_PATH);
+  let config;
+  try {
+    config = loadConfig(CONFIG_PATH);
+  } catch (err) {
+    console.log(`Config at ${CONFIG_PATH} is invalid: ${(err as Error).message}\n`);
+    console.log('Launching setup wizard to update it…\n');
+    await runSetup();
+    if (!existsSync(CONFIG_PATH)) process.exit(0);
+    config = loadConfig(CONFIG_PATH);
+  }
 
   const sense = new SenseClient(
     config.sense.email,
