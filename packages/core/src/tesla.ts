@@ -251,7 +251,8 @@ export class TeslaClient {
       },
     });
     if (!res.ok) {
-      throw new Error(`Tesla GET ${path} failed: ${res.status} ${res.statusText}`);
+      const body = await res.text().catch(() => '');
+      throw new Error(`Tesla GET ${path} failed: ${res.status} ${res.statusText}${body ? ` — ${body}` : ''}`);
     }
     return res.json() as Promise<ApiEnvelope<T>>;
   }
@@ -266,7 +267,8 @@ export class TeslaClient {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      throw new Error(`Tesla POST ${path} failed: ${res.status} ${res.statusText}`);
+      const resBody = await res.text().catch(() => '');
+      throw new Error(`Tesla POST ${path} failed: ${res.status} ${res.statusText}${resBody ? ` — ${resBody}` : ''}`);
     }
     return res.json() as Promise<ApiEnvelope<T>>;
   }
