@@ -45,10 +45,10 @@
         "description": "Obtained by running the CLI setup wizard (node packages/cli/dist/index.js). The token is saved here and rotated automatically."
       },
       "teslaRedirectUri": {
-        "title": "Tesla OAuth Redirect URI",
+        "title": "Tesla OAuth Redirect URI (optional)",
         "type": "string",
-        "required": true,
-        "description": "The redirect URI registered in your Tesla developer app (e.g. https://you.github.io/your-repo/callback). Must exactly match what is registered."
+        "required": false,
+        "description": "Only needed if you re-run the CLI setup wizard. Must match the redirect URI registered in your Tesla developer app."
       },
       "teslaEmail": {
         "title": "Tesla Account Email (optional)",
