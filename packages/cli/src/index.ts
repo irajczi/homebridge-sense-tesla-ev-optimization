@@ -34,6 +34,8 @@ import {
   SenseClient,
   TeslaClient,
   SolarChargeController,
+  geocodeHomeAddress,
+  needsAddressResolution,
   type LogLevel,
   type AppConfig,
 } from '@homebridge-ev-solar-charger/core';
@@ -60,6 +62,8 @@ async function main(): Promise<void> {
     if (!existsSync(CONFIG_PATH)) process.exit(0);
     config = loadConfig(CONFIG_PATH);
   }
+
+  await resolveHomeAddressIfNeeded(CONFIG_PATH, config);
 
   const sense = new SenseClient(
     config.sense.email,
@@ -151,6 +155,36 @@ function persistRefreshToken(configPath: string, config: AppConfig, newToken: st
   } catch (err) {
     log('error', `Failed to save rotated refresh token: ${(err as Error).message}`);
   }
+}
+
+async function resolveHomeAddressIfNeeded(configPath: string, config: AppConfig): Promise<void> {
+  if (!needsAddressResolution(config.home)) return;
+
+  const address = config.home!.address!.trim();
+  log('info', `Resolving home address with OpenStreetMap Nominatim: ${address}`);
+  log('info', 'Address lookup is performed once from this computer and cached in config.yaml');
+
+  const resolved = await geocodeHomeAddress(address);
+  config.home = {
+    ...config.home,
+    address,
+    latitude: resolved.latitude,
+    longitude: resolved.longitude,
+    timezone: config.home?.timezone?.trim() || resolved.suggestedTimezone,
+    radius_meters: config.home?.radius_meters ?? 150,
+    geocoded_address: resolved.displayName,
+    address_last_resolved: address,
+  };
+
+  const yaml = toYaml(config, { lineWidth: 120, quotingType: '"' });
+  writeFileSync(configPath, yaml, { encoding: 'utf8', mode: 0o600 });
+
+  log(
+    'info',
+    `Home resolved to ${resolved.latitude.toFixed(6)}, ${resolved.longitude.toFixed(6)} ` +
+    `(${config.home.timezone})`,
+  );
+  log('info', resolved.attribution);
 }
 
 // ---- Run --------------------------------------------------------------------

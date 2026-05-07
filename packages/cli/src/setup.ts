@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import inquirer from 'inquirer';
 import { dump as toYaml } from 'js-yaml';
-import { type AppConfig, loadConfig, validateConfig } from '@homebridge-ev-solar-charger/core';
+import { geocodeHomeAddress, type AppConfig, loadConfig, validateConfig } from '@homebridge-ev-solar-charger/core';
 
 const TESLA_AUTH_URL = 'https://auth.tesla.com/oauth2/v3';
 const TESLA_SCOPE = 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds';
@@ -31,8 +31,9 @@ async function runFullSetup(configPath: string): Promise<void> {
   const sense = await promptSense();
   const tesla = await promptTesla();
   const charging = await promptCharging();
+  const locationAutomation = await promptLocationAutomation();
 
-  const config: AppConfig = { sense, tesla, charging };
+  const config: AppConfig = { sense, tesla, charging, ...locationAutomation };
   await confirmAndWrite(config, configPath);
 }
 
@@ -50,6 +51,7 @@ async function runUpdateWizard(existing: AppConfig, configPath: string): Promise
         { name: 'Sense credentials  (email / password)', value: 'sense' },
         { name: 'Tesla credentials  (Fleet API client ID + secret)', value: 'tesla' },
         { name: 'Charging settings  (amps, interval, stop behaviour)', value: 'charging' },
+        { name: 'Location-aware daily wake  (optional)', value: 'locationAutomation' },
       ],
     },
   ]);
@@ -69,6 +71,9 @@ async function runUpdateWizard(existing: AppConfig, configPath: string): Promise
   }
   if (sections.includes('charging')) {
     config.charging = await promptCharging(existing.charging);
+  }
+  if (sections.includes('locationAutomation')) {
+    Object.assign(config, await promptLocationAutomation(existing));
   }
 
   await confirmAndWrite(config, configPath);
@@ -303,7 +308,7 @@ async function runTeslaOAuth(clientId: string, clientSecret: string, redirectUri
 async function promptCharging(current?: AppConfig['charging']): Promise<AppConfig['charging']> {
   console.log('\n  Charging Settings\n  ──────────────────');
 
-  return inquirer.prompt<AppConfig['charging']>([
+  const basic = await inquirer.prompt<AppConfig['charging']>([
     {
       type: 'number',
       name: 'min_amps',
@@ -338,6 +343,222 @@ async function promptCharging(current?: AppConfig['charging']): Promise<AppConfi
       default: current?.stop_when_insufficient ?? true,
     },
   ]);
+
+  const { enableAdaptivePolling } = await inquirer.prompt<{ enableAdaptivePolling: boolean }>([
+    {
+      type: 'confirm',
+      name: 'enableAdaptivePolling',
+      message: 'Enable adaptive polling to back off when readings are stable?',
+      default: current?.adaptive_polling?.enabled ?? false,
+    },
+  ]);
+
+  if (!enableAdaptivePolling) {
+    return {
+      ...basic,
+      adaptive_polling: current?.adaptive_polling
+        ? {
+          ...current.adaptive_polling,
+          enabled: false,
+        }
+        : undefined,
+    };
+  }
+
+  const adaptive = await inquirer.prompt<NonNullable<AppConfig['charging']['adaptive_polling']>>([
+    {
+      type: 'number',
+      name: 'stable_after_minutes',
+      message: 'Back off after how many stable minutes?',
+      default: current?.adaptive_polling?.stable_after_minutes ?? 2,
+      validate: (v: number) => (Number.isInteger(v) && v >= 1) || 'Must be a positive whole number',
+    },
+    {
+      type: 'number',
+      name: 'stable_interval_seconds',
+      message: 'Stable polling interval (seconds):',
+      default: current?.adaptive_polling?.stable_interval_seconds ?? 300,
+      validate(v: number) {
+        if (!Number.isInteger(v) || v < 10) return 'Must be a whole number >= 10';
+        if (v < basic.poll_interval_seconds) {
+          return `Must be >= poll_interval_seconds (${basic.poll_interval_seconds})`;
+        }
+        return true;
+      },
+    },
+    {
+      type: 'number',
+      name: 'change_threshold_watts',
+      message: 'Watt change threshold before returning to normal polling:',
+      default: current?.adaptive_polling?.change_threshold_watts ?? 250,
+      validate: (v: number) => (Number.isInteger(v) && v >= 0) || 'Must be a whole number >= 0',
+    },
+  ]);
+
+  return {
+    ...basic,
+    adaptive_polling: {
+      ...adaptive,
+      enabled: true,
+    },
+  };
+}
+
+async function promptLocationAutomation(
+  current?: Pick<AppConfig, 'home' | 'automation'>,
+): Promise<Pick<AppConfig, 'home' | 'automation'> | object> {
+  console.log('\n  Location-aware Daily Wake (optional)\n  ────────────────────────────────────');
+
+  const { enabled } = await inquirer.prompt<{ enabled: boolean }>([
+    {
+      type: 'confirm',
+      name: 'enabled',
+      message: 'Enable daily wake/check at sunrise + offset?',
+      default: current?.automation?.daily_wake_enabled ?? false,
+    },
+  ]);
+
+  if (!enabled) {
+    if (!current?.automation && !current?.home) return {};
+    return {
+      home: current.home,
+      automation: {
+        daily_wake_enabled: false,
+        wake_after_sunrise_minutes: current.automation?.wake_after_sunrise_minutes ?? 30,
+        sleep_after_insufficient_minutes: current.automation?.sleep_after_insufficient_minutes ?? null,
+      },
+    };
+  }
+
+  const { address, useLookup } = await inquirer.prompt<{ address: string; useLookup: boolean }>([
+    {
+      type: 'input',
+      name: 'address',
+      message: 'Home address (saved locally; used once for coordinate lookup):',
+      default: current?.home?.address ?? '',
+      filter: (v: string) => v.trim(),
+    },
+    {
+      type: 'confirm',
+      name: 'useLookup',
+      message: 'Look up this address with OpenStreetMap Nominatim now?',
+      default: true,
+      when: (answers: { address: string }) => answers.address.trim().length > 0,
+    },
+  ]);
+
+  let latitude = current?.home?.latitude;
+  let longitude = current?.home?.longitude;
+  let geocodedAddress = current?.home?.geocoded_address;
+  let addressLastResolved = current?.home?.address_last_resolved;
+  let suggestedTimezone = current?.home?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  if (address && useLookup) {
+    const resolved = await geocodeHomeAddress(address);
+    latitude = resolved.latitude;
+    longitude = resolved.longitude;
+    geocodedAddress = resolved.displayName;
+    addressLastResolved = address;
+    suggestedTimezone = resolved.suggestedTimezone;
+    console.log(`  Resolved: ${resolved.displayName}`);
+    console.log(`  Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+    console.log(`  Suggested timezone: ${suggestedTimezone}`);
+    console.log(`  ${resolved.attribution}`);
+  }
+
+  if (latitude === undefined || longitude === undefined) {
+    const manual = await inquirer.prompt<{ latitude: number; longitude: number }>([
+      {
+        type: 'number',
+        name: 'latitude',
+        message: 'Home latitude:',
+        validate: (v: number) => (typeof v === 'number' && Number.isFinite(v) && v >= -90 && v <= 90) || 'Enter a latitude from -90 to 90',
+      },
+      {
+        type: 'number',
+        name: 'longitude',
+        message: 'Home longitude:',
+        validate: (v: number) => (typeof v === 'number' && Number.isFinite(v) && v >= -180 && v <= 180) || 'Enter a longitude from -180 to 180',
+      },
+    ]);
+    latitude = manual.latitude;
+    longitude = manual.longitude;
+  }
+
+  const details = await inquirer.prompt<{
+    timezone: string;
+    radius_meters: number;
+    wake_after_sunrise_minutes: number;
+    sleep_after_insufficient_minutes: string;
+    power_expensive_start_time: string;
+  }>([
+    {
+      type: 'input',
+      name: 'timezone',
+      message: 'Timezone:',
+      default: suggestedTimezone,
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => v.trim().length > 0 || 'Timezone is required (for example, America/Los_Angeles)',
+    },
+    {
+      type: 'number',
+      name: 'radius_meters',
+      message: 'At-home radius in meters:',
+      default: current?.home?.radius_meters ?? 150,
+      validate: (v: number) => (Number.isInteger(v) && v >= 10 && v <= 10_000) || 'Must be a whole number from 10 to 10000',
+    },
+    {
+      type: 'number',
+      name: 'wake_after_sunrise_minutes',
+      message: 'Wake/check how many minutes after sunrise?',
+      default: current?.automation?.wake_after_sunrise_minutes ?? 30,
+      validate: (v: number) => (Number.isInteger(v) && v >= 0 && v <= 24 * 60) || 'Must be a whole number from 0 to 1440',
+    },
+    {
+      type: 'input',
+      name: 'sleep_after_insufficient_minutes',
+      message: 'Sleep until next morning after low solar for N minutes (blank = never):',
+      default: current?.automation?.sleep_after_insufficient_minutes?.toString() ?? '60',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        if (v === '') return true;
+        const parsed = Number(v);
+        return (Number.isInteger(parsed) && parsed >= 1) || 'Enter a positive whole number or leave blank';
+      },
+    },
+    {
+      type: 'input',
+      name: 'power_expensive_start_time',
+      message: 'Stop charging at expensive-power time (HH:MM, blank = never):',
+      default: current?.automation?.power_expensive_start_time ?? '',
+      filter: (v: string) => v.trim(),
+      validate: (v: string) => {
+        if (v === '') return true;
+        return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) || 'Enter HH:MM in 24-hour time, for example 16:00';
+      },
+    },
+  ]);
+
+  return {
+    home: {
+      address: address || undefined,
+      latitude,
+      longitude,
+      timezone: details.timezone,
+      radius_meters: details.radius_meters,
+      geocoded_address: geocodedAddress,
+      address_last_resolved: addressLastResolved,
+    },
+    automation: {
+      daily_wake_enabled: true,
+      wake_after_sunrise_minutes: details.wake_after_sunrise_minutes,
+      sleep_after_insufficient_minutes:
+        details.sleep_after_insufficient_minutes === ''
+          ? null
+          : Number(details.sleep_after_insufficient_minutes),
+      power_expensive_start_time: details.power_expensive_start_time || null,
+    },
+  };
 }
 
 // ---- Shared confirm + write -------------------------------------------------
@@ -396,6 +617,26 @@ function printSummary(config: AppConfig, configPath: string): void {
   console.log(`  Max amps             : ${charging.max_amps}A`);
   console.log(`  Poll interval        : ${charging.poll_interval_seconds}s`);
   console.log(`  Stop when low        : ${charging.stop_when_insufficient}`);
+  if (charging.adaptive_polling?.enabled) {
+    console.log(`  Adaptive polling     : stable after ${charging.adaptive_polling.stable_after_minutes} min`);
+    console.log(`  Stable interval      : ${charging.adaptive_polling.stable_interval_seconds}s`);
+    console.log(`  Change threshold     : ${charging.adaptive_polling.change_threshold_watts}W`);
+  }
+  if (config.automation?.daily_wake_enabled) {
+    console.log(`  Daily wake           : sunrise + ${config.automation.wake_after_sunrise_minutes} min`);
+    console.log(`  Home address         : ${config.home?.address ?? '(manual coordinates)'}`);
+    console.log(`  Home coordinates     : ${config.home?.latitude}, ${config.home?.longitude}`);
+    console.log(`  Home timezone        : ${config.home?.timezone}`);
+    console.log(`  At-home radius       : ${config.home?.radius_meters ?? 150}m`);
+    console.log(
+      `  Low-solar sleep      : ${
+        config.automation.sleep_after_insufficient_minutes === null
+          ? 'never'
+          : `${config.automation.sleep_after_insufficient_minutes} min`
+      }`,
+    );
+    console.log(`  Expensive cutoff     : ${config.automation.power_expensive_start_time ?? 'none'}`);
+  }
   console.log();
 }
 

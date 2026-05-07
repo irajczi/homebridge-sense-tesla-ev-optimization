@@ -26,6 +26,26 @@ export interface Vehicle {
   state: string;
 }
 
+export interface VehicleChargeStatus {
+  chargingState: string;
+  isPluggedIn: boolean;
+  isComplete: boolean;
+}
+
+export interface VehicleLocation {
+  latitude: number;
+  longitude: number;
+}
+
+export interface VehicleStatus {
+  id: string;
+  vin: string;
+  display_name: string;
+  state: string;
+  charge: VehicleChargeStatus;
+  location?: VehicleLocation;
+}
+
 // ---- Internal API shapes ----------------------------------------------------
 
 interface TokenResponse {
@@ -39,6 +59,14 @@ interface VehicleData {
   vin: string;
   display_name: string;
   state: string;
+  charge_state?: {
+    charging_state?: string;
+    conn_charge_cable?: string;
+  };
+  drive_state?: {
+    latitude?: number;
+    longitude?: number;
+  };
 }
 
 interface ApiEnvelope<T> {
@@ -123,6 +151,12 @@ export class TeslaClient {
     throw new Error(`Vehicle ${id} did not come online within ${WAKE_TIMEOUT_MS / 1_000}s`);
   }
 
+  async getVehicleStatus(id: string): Promise<VehicleStatus> {
+    await this.ensureToken();
+    const { response } = await this.get<VehicleData>(`/api/1/vehicles/${id}/vehicle_data`);
+    return toVehicleStatus(response);
+  }
+
   async setChargingAmps(id: string, amps: number): Promise<void> {
     await this.ensureToken();
     const data = await this.post<CommandResult>(
@@ -187,6 +221,26 @@ export class TeslaClient {
 
 function toVehicle(v: VehicleData): Vehicle {
   return { id: v.id_s, vin: v.vin, display_name: v.display_name, state: v.state };
+}
+
+function toVehicleStatus(v: VehicleData): VehicleStatus {
+  const chargingState = v.charge_state?.charging_state ?? 'Unknown';
+  const cable = v.charge_state?.conn_charge_cable ?? '';
+  const latitude = v.drive_state?.latitude;
+  const longitude = v.drive_state?.longitude;
+
+  return {
+    ...toVehicle(v),
+    charge: {
+      chargingState,
+      isPluggedIn: chargingState !== 'Disconnected' && chargingState !== 'Unknown' && cable !== '<invalid>',
+      isComplete: chargingState === 'Complete',
+    },
+    location:
+      typeof latitude === 'number' && typeof longitude === 'number'
+        ? { latitude, longitude }
+        : undefined,
+  };
 }
 
 function assertResult(result: CommandResult, command: string): void {

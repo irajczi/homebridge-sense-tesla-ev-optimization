@@ -14,6 +14,16 @@ There is no cloud service or subscription involved. The program runs on your own
 4. If the car is asleep it is woken before the first command. If it is already charging, only the amp setpoint is adjusted — no stop/start overhead.
 5. Everything is logged to the terminal with timestamps so you can see exactly what is happening each cycle.
 
+### Adaptive polling for API cost savings
+
+By default the controller checks every `charging.poll_interval_seconds` (usually 60 seconds). If `charging.adaptive_polling.enabled` is true, it watches whether solar production, home load, and the calculated target amps are actually changing:
+
+- while readings are changing, it keeps using the normal interval so it can react to clouds
+- after the readings stay stable for `stable_after_minutes` (default: 2), it backs off to `stable_interval_seconds` (default: 300 seconds / 5 minutes)
+- if the next check sees a meaningful change, it immediately returns to the normal interval
+
+`change_threshold_watts` defaults to 250 W so tiny Sense fluctuations do not keep the controller in fast mode forever. Any target amp change always counts as meaningful. The tradeoff is simple: lower API usage and less log noise during steady sun, with the possibility that a new cloud edge is noticed on the next slower check rather than within one minute.
+
 ---
 
 ## Requirements
@@ -86,6 +96,8 @@ node packages/cli/dist/index.js
 Because no `config.yaml` exists yet, the program detects that and runs the full setup wizard. See [Tesla Fleet API setup](#tesla-fleet-api-setup) at the bottom of this page to get your Fleet API credentials before running this.
 
 After confirming the summary, `config.yaml` is written with permissions `600` (owner read/write only).
+
+The location-aware daily wake flow is optional. If you enable it, setup can look up your home address once with OpenStreetMap Nominatim, cache the returned latitude/longitude in `config.yaml`, and suggest a timezone. You can skip the lookup and enter coordinates/timezone manually.
 
 ---
 
@@ -167,6 +179,26 @@ Leave it running. Charging adjusts itself throughout the day.
 2. Unplug the car as normal.
 
 You do not need to re-run setup. `config.yaml` is reused every time. Only run the setup wizard again if you change your Sense or Tesla credentials.
+
+### Optional daily wake mode
+
+If `automation.daily_wake_enabled` is true, the process is meant to stay running. Instead of starting charge optimization immediately, it waits until local sunrise plus your configured offset, wakes the selected Tesla, and checks:
+
+- the car is within your configured home radius
+- the car is plugged in
+- the car is not already full (`Complete`)
+
+If those checks pass, normal solar optimization begins. If the car is away, unplugged, or full, the controller sleeps until the next morning.
+
+`automation.sleep_after_insufficient_minutes` controls how long the controller keeps trying when there is not enough spare solar to charge. Set it to `60` to sleep until the next morning after an hour of low surplus. Set it to `null` to keep checking all day; this is useful for variable weather, but can increase Tesla Fleet API command usage and possible costs.
+
+`automation.power_expensive_start_time` is an optional local time cutoff for time-of-use plans or export-credit windows. Set it to a 24-hour `HH:MM` value like `16:00` to stop charging at 4pm in `home.timezone`, leaving solar production available to export to the grid. Leave it blank or set it to `null` to disable the cutoff.
+
+### Address lookup and privacy
+
+Address lookup is optional and runs from the user's own computer/Homebridge host, not from a service operated by this project. The app uses OpenStreetMap Nominatim without an account or API key, stores the physical address in `config.yaml`, and caches the resolved latitude/longitude so the lookup is not repeated during daily operation. If you edit `home.address` later, the CLI detects that it no longer matches `home.address_last_resolved` and resolves it again on the next run.
+
+For the zero-third-party path, leave `home.address` blank and enter `home.latitude`, `home.longitude`, and `home.timezone` manually. Sense is officially supported only in the United States and Canada, so timezone suggestions are conservative US/Canada guesses; confirm the IANA timezone if your address is near a timezone boundary.
 
 ---
 
@@ -269,6 +301,8 @@ The switch state is persisted across Homebridge restarts. If the switch was ON w
 
 The optional **auto-off** feature flips the switch OFF automatically after a configurable number of minutes with no solar production (e.g. after sunset), so the car stops being actively managed overnight.
 
+The optional **location-aware daily wake** feature lets the switch remain ON. The plugin waits until sunrise plus your offset, wakes/checks the selected car, and only starts solar optimization if the car is home, plugged in, and not already full.
+
 ### Installation
 
 #### Option A — Homebridge UI (recommended)
@@ -309,7 +343,9 @@ Go to **Homebridge → Plugins → EV Solar Charger → Settings**:
 | **Maximum Charge Amps** | Default: 32 — match your EVSE's rated capacity |
 | **Polling Interval** | Default: 60 seconds |
 | **Stop when insufficient** | `true` stops charging when surplus drops below minimum |
+| **Adaptive polling** | Optional: back off to slower checks when readings stay stable |
 | **Auto-off after no solar** | Minutes before auto-off after sunset (leave blank to disable) |
+| **Location-aware daily wake** | Optional: home address or coordinates, timezone, wake offset, low-solar sleep threshold, and expensive-power cutoff |
 
 Save and restart Homebridge. The **EV Solar Charger** switch will appear in your Home app within a few seconds.
 
@@ -336,6 +372,18 @@ Tesla periodically rotates refresh tokens. The plugin saves the new token automa
 | `charging.max_amps` | Yes | Maximum charging rate (1–48). Must be ≥ min_amps. |
 | `charging.poll_interval_seconds` | Yes | How often to read Sense and adjust amps (≥ 10). |
 | `charging.stop_when_insufficient` | Yes | `true` stops the session when surplus drops below min_amps. `false` keeps charging at min_amps. |
+| `charging.adaptive_polling.enabled` | No | `true` enables dynamic polling backoff when readings are stable. |
+| `charging.adaptive_polling.stable_after_minutes` | Adaptive only | Stable duration before backing off; default 2. |
+| `charging.adaptive_polling.stable_interval_seconds` | Adaptive only | Slower interval used while stable; default 300. |
+| `charging.adaptive_polling.change_threshold_watts` | Adaptive only | Solar/home watt delta that counts as meaningful; default 250. |
+| `home.address` | No | Physical address saved locally. Used only for optional one-time geocoding. |
+| `home.latitude` / `home.longitude` | Daily wake only | Home coordinates used to compare against Tesla vehicle location. |
+| `home.timezone` | Daily wake only | IANA timezone for sunrise scheduling, e.g. `America/Los_Angeles`. |
+| `home.radius_meters` | No | At-home radius; defaults to 150 m. |
+| `automation.daily_wake_enabled` | No | `true` waits until sunrise + offset and checks car location/plug/full state before optimizing. |
+| `automation.wake_after_sunrise_minutes` | Daily wake only | Minutes after local sunrise to perform the daily car check. |
+| `automation.sleep_after_insufficient_minutes` | No | Minutes of insufficient spare solar before sleeping until tomorrow. `null` keeps checking all day. |
+| `automation.power_expensive_start_time` | No | Optional `HH:MM` local time to stop charging when power becomes expensive or export is preferred. Blank/null disables. |
 
 The config path defaults to `./config.yaml` (relative to where you run the command). Override it with the `EV_CONFIG_PATH` environment variable:
 
@@ -454,6 +502,7 @@ A successful response looks like `{"response":{"domain":"...","public_key":"..."
 
 1. In the Tesla app, go to **Account → Security & Privacy → Third-Party App Access**.
 2. Your registered application should appear — tap it and tap **Allow**.
+3. If you plan to use location-aware daily wake, grant/confirm vehicle location access for this app. The daily check needs Tesla vehicle location to decide whether the selected car is at home.
 
 If the app does not appear immediately, complete Step 7 first (the setup wizard triggers the authorization flow), then check the Tesla app again.
 

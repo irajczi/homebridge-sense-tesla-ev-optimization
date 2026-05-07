@@ -101,11 +101,111 @@
         "description": "When enabled, charging stops if solar surplus drops below the minimum amps. When disabled, charging continues at the minimum."
       },
 
+      "adaptivePollingEnabled": {
+        "title": "Enable Adaptive Polling",
+        "type": "boolean",
+        "default": false,
+        "description": "Reduce API usage by backing off to slower checks when solar and home readings are stable."
+      },
+
+      "adaptiveStableAfterMinutes": {
+        "title": "Stable After (minutes)",
+        "type": "integer",
+        "default": 2,
+        "minimum": 1,
+        "description": "How long readings must stay stable before backing off to the slower interval."
+      },
+
+      "adaptiveStableIntervalSeconds": {
+        "title": "Stable Polling Interval (seconds)",
+        "type": "integer",
+        "default": 300,
+        "minimum": 30,
+        "description": "Polling interval used after readings are stable. 300 seconds is 5 minutes."
+      },
+
+      "adaptiveChangeThresholdWatts": {
+        "title": "Change Threshold (watts)",
+        "type": "integer",
+        "default": 250,
+        "minimum": 0,
+        "description": "Solar or home watt changes above this amount return polling to the normal interval."
+      },
+
       "autoOffAfterNoSolarMinutes": {
         "title": "Auto-off After No Solar (minutes)",
         "type": "integer",
         "minimum": 1,
         "description": "Flip the HomeKit switch OFF automatically once solar production has been zero for this many minutes. Leave blank to disable."
+      },
+
+      "dailyWakeEnabled": {
+        "title": "Enable Location-aware Daily Wake",
+        "type": "boolean",
+        "default": false,
+        "description": "When enabled, the switch can stay on while the plugin waits until sunrise plus the configured offset, then wakes the car only if it is home and plugged in."
+      },
+
+      "homeAddress": {
+        "title": "Home Address",
+        "type": "string",
+        "description": "Optional. If coordinates are blank, this address is looked up with OpenStreetMap Nominatim from your Homebridge host at startup."
+      },
+
+      "homeLatitude": {
+        "title": "Home Latitude",
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90,
+        "description": "Optional when Home Address is provided; required for daily wake if you do not want address lookup."
+      },
+
+      "homeLongitude": {
+        "title": "Home Longitude",
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180,
+        "description": "Optional when Home Address is provided; required for daily wake if you do not want address lookup."
+      },
+
+      "homeTimezone": {
+        "title": "Home Timezone",
+        "type": "string",
+        "placeholder": "America/Los_Angeles",
+        "description": "IANA timezone used for sunrise scheduling. If blank, the plugin suggests one from the address lookup."
+      },
+
+      "homeRadiusMeters": {
+        "title": "At-home Radius (meters)",
+        "type": "integer",
+        "default": 150,
+        "minimum": 10,
+        "maximum": 10000,
+        "description": "The car must be within this radius of home to start the daily solar check."
+      },
+
+      "wakeAfterSunriseMinutes": {
+        "title": "Wake After Sunrise (minutes)",
+        "type": "integer",
+        "default": 30,
+        "minimum": 0,
+        "maximum": 1440,
+        "description": "How many minutes after local sunrise to wake the car and check whether it is home, plugged in, and not full."
+      },
+
+      "sleepAfterInsufficientMinutes": {
+        "title": "Sleep After Low Solar (minutes)",
+        "type": "integer",
+        "minimum": 1,
+        "description": "If solar surplus stays below the minimum amps this long, stop trying until the next morning. Leave blank to keep checking all day."
+      },
+
+      "powerExpensiveStartTime": {
+        "title": "Power Expensive Start Time",
+        "type": "string",
+        "placeholder": "16:00",
+        "pattern": "^$|^([01]\\d|2[0-3]):[0-5]\\d$",
+        "description": "Optional advanced setting. At this local time, charging stops so solar can export to the grid. Use 24-hour HH:MM; blank disables."
       }
     }
   },
@@ -181,7 +281,52 @@
             { "flex": "1 1 200px", "key": "autoOffAfterNoSolarMinutes" }
           ]
         },
-        "stopWhenInsufficient"
+        "stopWhenInsufficient",
+        "adaptivePollingEnabled",
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 200px", "key": "adaptiveStableAfterMinutes" },
+            { "flex": "1 1 200px", "key": "adaptiveStableIntervalSeconds" },
+            { "flex": "1 1 200px", "key": "adaptiveChangeThresholdWatts" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Location-aware Daily Wake",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "dailyWakeEnabled",
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 300px", "key": "homeAddress" },
+            { "flex": "1 1 220px", "key": "homeTimezone" }
+          ]
+        },
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 180px", "key": "homeLatitude" },
+            { "flex": "1 1 180px", "key": "homeLongitude" },
+            { "flex": "1 1 180px", "key": "homeRadiusMeters" }
+          ]
+        },
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": [
+            { "flex": "1 1 220px", "key": "wakeAfterSunriseMinutes" },
+            { "flex": "1 1 220px", "key": "sleepAfterInsufficientMinutes" },
+            { "flex": "1 1 220px", "key": "powerExpensiveStartTime" }
+          ]
+        }
       ]
     }
   ]

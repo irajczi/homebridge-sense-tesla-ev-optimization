@@ -38,7 +38,13 @@ import {
   Characteristic,
 } from 'homebridge';
 
-import { AppConfig, SenseClient, TeslaClient } from '@homebridge-ev-solar-charger/core';
+import {
+  AppConfig,
+  SenseClient,
+  TeslaClient,
+  geocodeHomeAddress,
+  needsAddressResolution,
+} from '@homebridge-ev-solar-charger/core';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import { EvSolarChargerAccessory } from './accessory.js';
 
@@ -102,7 +108,11 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
 
     this.api.on('didFinishLaunching', () => {
       this.log.debug('Executed didFinishLaunching callback');
-      this.sense.connect()
+      this.resolveHomeAddressIfNeeded()
+        .catch((err: Error) => {
+          this.log.error('Failed to resolve home address:', err.message);
+        })
+        .then(() => this.sense.connect())
         .then(() => {
           this.log.info('Connected to Sense Energy Monitor');
           this.discoverDevices();
@@ -113,6 +123,32 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
           this.discoverDevices();
         });
     });
+  }
+
+  private async resolveHomeAddressIfNeeded(): Promise<void> {
+    if (!needsAddressResolution(this.appConfig.home)) return;
+
+    const address = this.appConfig.home!.address!.trim();
+    this.log.info(`Resolving home address with OpenStreetMap Nominatim: ${address}`);
+    this.log.info('Address lookup is performed from this Homebridge host and cached in memory for this run');
+
+    const resolved = await geocodeHomeAddress(address);
+    this.appConfig.home = {
+      ...this.appConfig.home,
+      address,
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+      timezone: this.appConfig.home?.timezone?.trim() || resolved.suggestedTimezone,
+      radius_meters: this.appConfig.home?.radius_meters ?? 150,
+      geocoded_address: resolved.displayName,
+      address_last_resolved: address,
+    };
+
+    this.log.info(
+      `Home resolved to ${resolved.latitude.toFixed(6)}, ${resolved.longitude.toFixed(6)} ` +
+      `(${this.appConfig.home.timezone})`,
+    );
+    this.log.info(resolved.attribution);
   }
 
   /**
@@ -165,7 +201,20 @@ export class EvSolarChargerPlatform implements DynamicPlatformPlugin {
  * maximumChargeAmps          → charging.max_amps
  * pollingIntervalSeconds     → charging.poll_interval_seconds
  * stopWhenInsufficient       → charging.stop_when_insufficient
+ * adaptivePollingEnabled     → charging.adaptive_polling.enabled
+ * adaptiveStableAfterMinutes → charging.adaptive_polling.stable_after_minutes
+ * adaptiveStableInterval...  → charging.adaptive_polling.stable_interval_seconds
+ * adaptiveChangeThreshold... → charging.adaptive_polling.change_threshold_watts
  * autoOffAfterNoSolarMinutes → homebridge.auto_off_after_no_solar_minutes
+ * homeAddress                → home.address
+ * homeLatitude               → home.latitude
+ * homeLongitude              → home.longitude
+ * homeTimezone               → home.timezone
+ * homeRadiusMeters           → home.radius_meters
+ * dailyWakeEnabled           → automation.daily_wake_enabled
+ * wakeAfterSunriseMinutes    → automation.wake_after_sunrise_minutes
+ * sleepAfterInsufficient...  → automation.sleep_after_insufficient_minutes
+ * powerExpensiveStartTime    → automation.power_expensive_start_time
  */
 function buildAppConfig(config: PlatformConfig): AppConfig {
   return {
@@ -186,10 +235,31 @@ function buildAppConfig(config: PlatformConfig): AppConfig {
       max_amps: (config.maximumChargeAmps as number) ?? 32,
       poll_interval_seconds: (config.pollingIntervalSeconds as number) ?? 60,
       stop_when_insufficient: (config.stopWhenInsufficient as boolean) ?? true,
+      adaptive_polling: {
+        enabled: (config.adaptivePollingEnabled as boolean) ?? false,
+        stable_after_minutes: (config.adaptiveStableAfterMinutes as number | undefined) ?? 2,
+        stable_interval_seconds: (config.adaptiveStableIntervalSeconds as number | undefined) ?? 300,
+        change_threshold_watts: (config.adaptiveChangeThresholdWatts as number | undefined) ?? 250,
+      },
     },
     homebridge: {
       auto_off_after_no_solar_minutes:
         (config.autoOffAfterNoSolarMinutes as number | undefined) ?? null,
+    },
+    home: {
+      address: config.homeAddress as string | undefined,
+      latitude: config.homeLatitude as number | undefined,
+      longitude: config.homeLongitude as number | undefined,
+      timezone: config.homeTimezone as string | undefined,
+      radius_meters: (config.homeRadiusMeters as number | undefined) ?? 150,
+    },
+    automation: {
+      daily_wake_enabled: (config.dailyWakeEnabled as boolean) ?? false,
+      wake_after_sunrise_minutes: (config.wakeAfterSunriseMinutes as number | undefined) ?? 30,
+      sleep_after_insufficient_minutes:
+        (config.sleepAfterInsufficientMinutes as number | undefined) ?? null,
+      power_expensive_start_time:
+        ((config.powerExpensiveStartTime as string | undefined)?.trim() || null),
     },
   };
 }

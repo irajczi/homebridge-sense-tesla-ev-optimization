@@ -65,6 +65,73 @@ charging:
   # false — keeps charging at min_amps even if it draws a little grid power.
   stop_when_insufficient: true
 
+  # Optional API/cost saving mode. While solar/home readings are moving, the
+  # controller uses poll_interval_seconds. If readings stay stable long enough,
+  # it backs off to stable_interval_seconds. Any meaningful change returns it to
+  # the normal interval so it can chase clouds again.
+  adaptive_polling:
+    enabled: false
+
+    # How long solar/home readings must remain stable before backing off.
+    stable_after_minutes: 2
+
+    # Backoff interval after stability is detected. 300 seconds = 5 minutes.
+    stable_interval_seconds: 300
+
+    # Small Sense fluctuations below this many watts are treated as stable.
+    # Target amp changes always count as meaningful changes.
+    change_threshold_watts: 250
+
+# ── Optional home location + daily wake scheduling ───────────────────────────
+# Leave both sections out to keep the original behavior: when the CLI starts or
+# the HomeKit switch turns on, charging optimization begins immediately.
+#
+# If automation.daily_wake_enabled is true, the program can stay running
+# overnight. Each day it waits until local sunrise + wake_after_sunrise_minutes,
+# wakes the selected Tesla, checks that it is at home, plugged in, and not full,
+# then starts the normal solar optimization loop.
+home:
+  # Physical address is optional but useful to keep in the file. The CLI can
+  # look this up once with OpenStreetMap Nominatim, then cache the coordinates
+  # below. If you edit this address later, the CLI resolves it again on next run.
+  address: "1 Market St, San Francisco, CA"
+
+  # Cached coordinates for the home check. Enter these manually if you do not
+  # want to use a public geocoder.
+  latitude: 37.793700
+  longitude: -122.394200
+
+  # IANA timezone used for sunrise calculation. Confirm this when using an
+  # address near a state/province timezone boundary.
+  timezone: "America/Los_Angeles"
+
+  # How close the car must be to home to count as "at home".
+  radius_meters: 150
+
+  # Cached lookup metadata. These are maintained by the CLI when it resolves
+  # address. They are safe to delete; the next run will look up address again.
+  geocoded_address: "1 Market St, San Francisco, California, United States"
+  address_last_resolved: "1 Market St, San Francisco, CA"
+
+automation:
+  # true  — wait until sunrise + offset, then wake/check the car once per day.
+  # false — start immediately when the CLI/HomeKit switch starts the controller.
+  daily_wake_enabled: false
+
+  # Daily check offset. 30 means "30 minutes after sunrise".
+  wake_after_sunrise_minutes: 30
+
+  # If surplus stays below charging.min_amps for this many minutes, stop trying
+  # until the next morning. Set to null to keep checking all day; that may
+  # increase Tesla Fleet API command usage/costs.
+  sleep_after_insufficient_minutes: 60
+
+  # Optional local time when electricity becomes expensive or export credits are
+  # more valuable. At this time the controller stops charging so solar can export
+  # to the grid. Use 24-hour HH:MM in home.timezone, e.g. "16:00" for 4pm.
+  # Set to null or leave blank to disable.
+  power_expensive_start_time: null
+
 # ── Homebridge integration (optional) ─────────────────────────────────────────
 # Remove this section when running the CLI standalone without the Homebridge plugin.
 # homebridge:
