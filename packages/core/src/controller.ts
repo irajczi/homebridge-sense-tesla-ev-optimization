@@ -7,16 +7,17 @@
  *
  * Surplus calculation (per poll tick):
  *   The PRD spec uses raw Sense home watts directly. This implementation takes
- *   a more precise approach: it subtracts the car's own last-commanded draw
- *   (currentAmps × 240 V) from the Sense home reading before computing
- *   surplus. This matters because Sense usually includes the car's charger as
- *   part of total home consumption — subtracting it lets us calculate the true
- *   base house load and therefore the correct target amps for the car.
+ *   a more precise approach: it subtracts the car's own current/last-commanded
+ *   draw from the Sense home reading before computing surplus. This matters
+ *   because Sense usually includes the car's charger as part of total home
+ *   consumption — subtracting it lets us calculate the true base house load and
+ *   therefore the correct target amps for the car.
  *
  *   If Sense does NOT detect the car as a separate device, this subtraction
- *   over-corrects by zero (currentAmps starts at 0 until charging begins), so
- *   the result is still correct on the first start. After that, the in-memory
- *   `currentAmps` accurately tracks what was last commanded.
+ *   over-corrects by zero until charging begins, so the result is still correct
+ *   on the first start. On startup, the controller also checks live Tesla charge
+ *   state; if the car is already pulling power, that draw seeds the in-memory
+ *   car-load estimate before the first Sense calculation.
  *
  * Scheduling:
  *   Uses a chained `setTimeout` rather than `setInterval` so ticks never
@@ -44,7 +45,7 @@ import { EventEmitter } from 'events';
 import { AppConfig } from './config.js';
 import { isWithinHomeRadius, nextLocalClockTime, nextSunriseWake } from './location.js';
 import { SenseClient } from './sense.js';
-import { TeslaClient, Vehicle } from './tesla.js';
+import { TeslaClient, Vehicle, VehicleChargeStatus } from './tesla.js';
 
 /** Single-phase EV charger voltage assumed by the Owner's API. */
 const VOLTS = 240;
@@ -82,22 +83,29 @@ export class SolarChargeController extends EventEmitter {
   private lastPollSample: PollSample | null = null;
   private stableSince: number | null = null;
   private adaptiveBackoffActive = false;
+  private startupChargeStateSynced = false;
 
   /** Cached after the first successful Tesla API call. */
   private vehicle: Vehicle | null = null;
 
   /**
    * Whether we believe the car is currently charging.
-   * Tracks commands issued by this controller, not live vehicle state.
+   * Seeded from live vehicle state on startup, then tracks controller commands.
    */
   private charging = false;
 
   /**
-   * Last amp setpoint commanded to the car.
-   * Used to subtract the car's own draw from the Sense home reading so the
-   * surplus calculation is based on non-car home load only.
+   * Last known active/current amp setpoint for the car. On controller startup,
+   * this can come from live Tesla charge state if something else already
+   * started the session.
    */
   private currentAmps = 0;
+
+  /**
+   * Last known car charging draw. This is subtracted from the Sense home
+   * reading so surplus math is based on non-car home load only.
+   */
+  private currentChargeWatts = 0;
 
   constructor(
     private readonly config: AppConfig,
@@ -144,6 +152,7 @@ export class SolarChargeController extends EventEmitter {
     this.lastPollSample = null;
     this.stableSince = null;
     this.adaptiveBackoffActive = false;
+    this.startupChargeStateSynced = false;
     this.log('info', 'Controller stopped');
   }
 
@@ -256,6 +265,9 @@ export class SolarChargeController extends EventEmitter {
       this.log('info', `Daily check passed: vehicle is plugged in at home (${homeCheck.distanceMeters.toFixed(0)}m away)`);
     }
 
+    this.startupChargeStateSynced = true;
+    this.applyLiveChargeStatus(status.charge);
+
     this.awaitingDailyWake = false;
     this.scheduleExpensivePowerCutoff();
     this.schedulePoll(0);
@@ -323,12 +335,14 @@ export class SolarChargeController extends EventEmitter {
         this.log('info', `Using vehicle: ${this.vehicle.display_name} (${this.vehicle.vin})`);
       }
 
+      await this.syncStartupChargeState();
+
       const solarW = this.sense.getSolarWatts();
       const homeW = this.sense.getHomeWatts();
 
       // Sense homeW includes the car's own charging load. Subtract it to get
       // the base house load, then compute what solar can actually provide the car.
-      const baseLoadW = homeW - this.currentAmps * VOLTS;
+      const baseLoadW = Math.max(0, homeW - this.currentChargeWatts);
       const availableW = solarW - baseLoadW;
       const rawAmps = availableW / VOLTS;
       const targetAmps = rawAmps >= this.config.charging.min_amps
@@ -337,7 +351,8 @@ export class SolarChargeController extends EventEmitter {
 
       this.log(
         'info',
-        `Solar ${solarW}W · Home ${homeW}W · Available ${availableW.toFixed(0)}W · Raw target ${rawAmps.toFixed(1)}A`,
+        `Solar ${solarW}W · Home ${homeW}W · Tesla ${this.currentChargeWatts.toFixed(0)}W · ` +
+        `Available ${availableW.toFixed(0)}W · Raw target ${rawAmps.toFixed(1)}A`,
       );
 
       this.updateAdaptivePolling({
@@ -496,6 +511,7 @@ export class SolarChargeController extends EventEmitter {
     await this.tesla.setChargingAmps(id, amps);
     await this.tesla.startCharging(id);
     this.currentAmps = amps;
+    this.currentChargeWatts = amps * VOLTS;
     this.charging = true;
     this.log('info', `Charging started at ${amps}A`);
     this.emit('charging:start', amps);
@@ -505,6 +521,7 @@ export class SolarChargeController extends EventEmitter {
     const { id } = this.vehicle!;
     await this.tesla.stopCharging(id);
     this.currentAmps = 0;
+    this.currentChargeWatts = 0;
     this.charging = false;
     this.log('info', `Charging stopped (${reason})`);
     this.emit('charging:stop');
@@ -515,6 +532,7 @@ export class SolarChargeController extends EventEmitter {
     const prev = this.currentAmps;
     await this.tesla.setChargingAmps(id, targetAmps);
     this.currentAmps = targetAmps;
+    this.currentChargeWatts = targetAmps * VOLTS;
     this.log('info', `Amps adjusted ${prev}A → ${targetAmps}A`);
     this.emit('amps:adjust', prev, targetAmps);
   }
@@ -527,6 +545,51 @@ export class SolarChargeController extends EventEmitter {
 
   private isDailyWakeMode(): boolean {
     return this.config.automation?.daily_wake_enabled === true;
+  }
+
+  private async syncStartupChargeState(): Promise<void> {
+    if (this.startupChargeStateSynced) return;
+    this.startupChargeStateSynced = true;
+
+    const vehicle = this.vehicle;
+    if (!vehicle) return;
+
+    if (vehicle.state !== 'online') {
+      this.log('info', `Startup charge-state check skipped: vehicle is ${vehicle.state}`);
+      return;
+    }
+
+    try {
+      const status = await this.tesla.getVehicleStatus(vehicle.id);
+      this.applyLiveChargeStatus(status.charge);
+    } catch (err) {
+      this.log('warn', `Startup charge-state check failed: ${(err as Error).message}`);
+    }
+  }
+
+  private applyLiveChargeStatus(charge: VehicleChargeStatus): void {
+    const voltage = charge.chargerVoltage && charge.chargerVoltage > 0 ? charge.chargerVoltage : VOLTS;
+    const reportedAmps = charge.actualAmps ?? charge.requestedAmps;
+    const liveAmps = reportedAmps ?? (charge.chargerPowerWatts !== null ? charge.chargerPowerWatts / voltage : 0);
+    const liveWatts = reportedAmps !== null && reportedAmps > 0
+      ? reportedAmps * voltage
+      : charge.chargerPowerWatts ?? 0;
+    const isDrawingPower = liveWatts > 0 || liveAmps > 0;
+    const isCharging = charge.chargingState === 'Charging' || isDrawingPower;
+
+    if (!isCharging) {
+      this.log('info', `Startup charge-state check: vehicle is ${charge.chargingState}; Tesla load baseline is 0W`);
+      return;
+    }
+
+    this.currentAmps = Math.round(liveAmps);
+    this.currentChargeWatts = liveWatts;
+    this.charging = true;
+    this.log(
+      'info',
+      `Startup charge-state check: vehicle already charging at ${liveAmps.toFixed(1)}A ` +
+      `(${liveWatts.toFixed(0)}W); using that as the Tesla load baseline`,
+    );
   }
 }
 

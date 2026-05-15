@@ -30,6 +30,10 @@ export interface VehicleChargeStatus {
   chargingState: string;
   isPluggedIn: boolean;
   isComplete: boolean;
+  actualAmps: number | null;
+  requestedAmps: number | null;
+  chargerVoltage: number | null;
+  chargerPowerWatts: number | null;
 }
 
 export interface VehicleLocation {
@@ -62,6 +66,10 @@ interface VehicleData {
   charge_state?: {
     charging_state?: string;
     conn_charge_cable?: string;
+    charger_actual_current?: number;
+    charge_current_request?: number;
+    charger_voltage?: number;
+    charger_power?: number;
   };
   drive_state?: {
     latitude?: number;
@@ -226,6 +234,10 @@ function toVehicle(v: VehicleData): Vehicle {
 function toVehicleStatus(v: VehicleData): VehicleStatus {
   const chargingState = v.charge_state?.charging_state ?? 'Unknown';
   const cable = v.charge_state?.conn_charge_cable ?? '';
+  const actualAmps = nullableNumber(v.charge_state?.charger_actual_current);
+  const requestedAmps = nullableNumber(v.charge_state?.charge_current_request);
+  const chargerVoltage = nullableNumber(v.charge_state?.charger_voltage);
+  const chargerPowerKw = nullableNumber(v.charge_state?.charger_power);
   const latitude = v.drive_state?.latitude;
   const longitude = v.drive_state?.longitude;
 
@@ -235,12 +247,20 @@ function toVehicleStatus(v: VehicleData): VehicleStatus {
       chargingState,
       isPluggedIn: chargingState !== 'Disconnected' && chargingState !== 'Unknown' && cable !== '<invalid>',
       isComplete: chargingState === 'Complete',
+      actualAmps,
+      requestedAmps,
+      chargerVoltage,
+      chargerPowerWatts: chargerPowerKw !== null ? chargerPowerKw * 1_000 : null,
     },
     location:
       typeof latitude === 'number' && typeof longitude === 'number'
         ? { latitude, longitude }
         : undefined,
   };
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function assertResult(result: CommandResult, command: string): void {
